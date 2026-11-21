@@ -1,0 +1,13 @@
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# test scaffolding and fixtures must never ship
+/test/
+node_modules/
+*.epub
+!docs/**/*.epub
+*.log
