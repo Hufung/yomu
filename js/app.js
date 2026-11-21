@@ -14,7 +14,8 @@
 
   const PREFS_KEY = 'yomu.prefs.v1';
   const DEFAULTS = {
-    theme: 'light', size: 100, leading: 170, width: 700, font: 'serif',
+    theme: 'auto', size: 100, leading: 170, width: 700, font: 'serif',
+    fullBleed: false,
   };
 
   const state = {
@@ -75,15 +76,27 @@
     try { localStorage.setItem(PREFS_KEY, JSON.stringify(state.prefs)); } catch (_) {}
   }
 
+  /* "auto" follows the OS. The media query is live, so a user who switches
+   * their system theme at dusk sees the app follow without a reload. */
+  const darkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+
+  function resolvedTheme() {
+    const p = state.prefs.theme;
+    if (p === 'auto') return darkQuery && darkQuery.matches ? 'dark' : 'light';
+    return p;
+  }
+
   function applyPrefs() {
     const p = state.prefs;
     const root = document.documentElement;
-    root.dataset.theme = p.theme;
+    const theme = resolvedTheme();
+    root.dataset.theme = theme;
     root.style.setProperty('--reader-size', (p.size / 100).toFixed(3));
     root.style.setProperty('--reader-leading', (p.leading / 100).toFixed(2));
     root.style.setProperty('--reader-width', p.width + 'px');
     root.style.setProperty('--reader-font',
       p.font === 'sans' ? 'var(--sans)' : p.font === 'serif' ? 'var(--serif)' : 'inherit');
+    root.classList.toggle('full-bleed', !!p.fullBleed);
 
     // Sync the controls that exist in the DOM.
     const map = [
@@ -94,10 +107,17 @@
     const ol = $('#out-leading'); if (ol) ol.textContent = (p.leading / 100).toFixed(1);
     const ow = $('#out-width'); if (ow) ow.textContent = String(p.width);
     const of = $('#opt-font'); if (of) of.value = p.font;
+    const fb = $('#opt-fullbleed'); if (fb) fb.checked = !!p.fullBleed;
     $$('#drawer-aa .seg button').forEach((b) => b.classList.toggle('on', b.dataset.theme === p.theme));
 
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.content = p.theme === 'dark' ? '#16181a' : p.theme === 'sepia' ? '#efe6d4' : '#f6f3ec';
+    if (meta) meta.content = theme === 'dark' ? '#16181a' : theme === 'sepia' ? '#efe6d4' : '#f6f3ec';
+  }
+
+  if (darkQuery) {
+    const onScheme = () => { if (state.prefs.theme === 'auto') applyPrefs(); };
+    if (darkQuery.addEventListener) darkQuery.addEventListener('change', onScheme);
+    else if (darkQuery.addListener) darkQuery.addListener(onScheme);
   }
 
   /* Cover object URLs are NOT persisted: a blob: URL is only valid in the
@@ -194,6 +214,14 @@
       a.textContent = b.author || '—';
       meta.append(t, a);
 
+      // Format badge: a PDF on the shelf should not pretend to be an EPUB.
+      const fmt = (b.format || 'epub').toUpperCase().replace('MARKDOWN', 'MD');
+      const badge = document.createElement('span');
+      badge.className = 'card-format';
+      badge.dataset.format = b.format || 'epub';
+      badge.textContent = fmt;
+      cover.appendChild(badge);
+
       card.append(cover, meta);
       const open = () => openBook(b.id);
       cover.addEventListener('click', open);
@@ -258,10 +286,65 @@
 
   /* ─────────────────────────── import ─────────────────────────── */
 
+  const FORMATS = {
+    epub: /\.epub$/i,
+    mobi: /\.(mobi|azw3|azw|prc)$/i,
+    pdf: /\.pdf$/i,
+    txt: /\.(txt|md|markdown|text)$/i,
+  };
+
+  function formatOf(file) {
+    const name = (file && file.name) || '';
+    for (const [k, re] of Object.entries(FORMATS)) if (re.test(name)) return k;
+    const t = (file && file.type) || '';
+    if (t === 'application/epub+zip') return 'epub';
+    if (t === 'application/pdf') return 'pdf';
+    if (t.includes('mobi')) return 'mobi';
+    if (t.startsWith('text/')) return 'txt';
+    return null;
+  }
+
+  /* Open any supported format and normalise it to the reader's book shape:
+   * { title, author, chapters:[...], renderChapter(i) -> {html|host}, coverBlob() } */
+  async function openAny(format, buffer, fileName) {
+    if (format === 'epub') return Epub.open(buffer);
+    if (format === 'mobi' || format === 'azw3') {
+      // Loaded on demand: the MOBI/KF8 parsers are ~60 KB nobody needs for EPUB.
+      await loadScript('js/mobi7.js');
+      await loadScript('js/mobi.js');
+      return window.YomuMobi.openMobi(buffer, fileName);
+    }
+    if (format === 'pdf') {
+      await loadScript('js/pdf.js');
+      return window.YomuPdf.openPdf(buffer, fileName);
+    }
+    // "markdown" is what the TXT parser reports back for .md/.markdown files.
+    if (format === 'txt' || format === 'markdown' || format === 'text') {
+      return window.YomuText.openText(new Uint8Array(buffer), fileName);
+    }
+    throw new Error('unsupported format: ' + format);
+  }
+
+  /* Classic <script> injection instead of dynamic import(): it works on any
+   * static host without worrying about .js MIME types, and keeps the app usable
+   * as a double-clicked file:// page too. */
+  const loaded = new Set();
+  function loadScript(src) {
+    if (loaded.has(src)) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = () => { loaded.add(src); resolve(); };
+      s.onerror = () => reject(new Error('無法載入 ' + src));
+      document.head.appendChild(s);
+    });
+  }
+
   async function importFiles(fileList) {
-    const files = Array.from(fileList || []).filter((f) => /\.epub$/i.test(f.name) || f.type === 'application/epub+zip');
+    const files = Array.from(fileList || []).map((f) => ({ file: f, format: formatOf(f) }))
+      .filter((x) => x.format);
     if (!files.length) {
-      toast('請選擇 .epub 檔案', 'err');
+      toast('請選擇 EPUB、MOBI／AZW3、PDF 或 TXT 檔案', 'err');
       return;
     }
     // Ask for durable storage up front — browsers may otherwise evict the books.
@@ -269,39 +352,46 @@
       navigator.storage.persist().catch(() => {});
     }
 
-    for (const file of files) {
-      const label = `正在匯入「${file.name}」…`;
-      toast(label, null, 60000);
+    for (const { file, format } of files) {
+      toast(`正在匯入「${file.name}」…`, null, 60000);
+      let book = null;
       try {
         const buf = await file.arrayBuffer();
-        const epub = await Epub.open(buf.slice(0));
-        const coverUrl = epub.coverUrl();
+        book = await openAny(format, buf.slice(0), file.name);
+
+        // Cover: EPUB exposes a blob URL, MOBI/PDF generate one, TXT has none.
         let cover = null;
-        if (coverUrl) {
-          try {
-            const res = await fetch(coverUrl);
-            const blob = await res.blob();
-            // Downscale so the library grid stays light.
-            cover = await shrinkImage(blob, 480);
-          } catch (_) { cover = null; }
-        }
+        try {
+          let blob = null;
+          if (format === 'epub') {
+            const u = book.coverUrl();
+            if (u) blob = await (await fetch(u)).blob();
+          } else if (book.coverBlob) {
+            blob = await book.coverBlob();
+          }
+          if (blob) cover = await shrinkImage(blob, 480);
+        } catch (_) { cover = null; }
+
         const id = uid();
-        const book = {
+        const entry = {
           id,
-          title: epub.title || file.name.replace(/\.epub$/i, ''),
-          author: epub.author || '',
-          language: epub.language || '',
-          chapterCount: epub.chapters.length,
+          // Trust the parser: a .md file is stored as "markdown", not "txt".
+          format: book.format || format,
+          title: book.title || file.name.replace(/\.[^.]+$/, ''),
+          author: book.author || '',
+          language: book.language || '',
+          chapterCount: book.chapters.length,
           bytes: file.size,
           cover: cover || null,
           addedAt: Date.now(),
           lastOpenedAt: 0,
           readRatio: 0,
         };
-        await Store.addBook(book, buf);
+        await Store.addBook(entry, buf);
         // Free the temporary blob URLs held by this parse (urlCache is a Map).
-        if (epub.urlCache) for (const u of epub.urlCache.values()) URL.revokeObjectURL(u);
-        toast(`已加入「${book.title}」`, 'ok');
+        if (book.urlCache) for (const u of book.urlCache.values()) URL.revokeObjectURL(u);
+        if (book.destroy) book.destroy();
+        toast(`已加入「${entry.title}」`, 'ok');
       } catch (err) {
         console.error(err);
         toast(`「${file.name}」匯入失敗：${err.message || err}`, 'err', 6000);
@@ -354,7 +444,7 @@
     }
     toast('正在開啟…', null, 8000);
     try {
-      state.epub = await Epub.open(buf);
+      state.epub = await openAny(meta.format || 'epub', buf, meta.title || '');
     } catch (e) {
       toast('無法開啟：' + (e.message || e), 'err', 7000);
       return;
@@ -402,6 +492,16 @@
 
     const ch = state.epub.renderChapter(index);
     const root = $('#chapter');
+
+    // Update the chrome BEFORE the (possibly async) page paint: a PDF takes a
+    // few hundred ms to draw, and leaving the old chapter's label on screen
+    // during that window looks like the navigation failed.
+    $('#rd-chapter').textContent = ch.title || `第 ${index + 1} 節`;
+    $('#chapter-pos').textContent = `${index + 1} / ${total}`;
+    $('#btn-prev').disabled = index === 0;
+    $('#btn-next').disabled = index === total - 1;
+    $$('#toc-list li').forEach((li) => li.classList.toggle('on', Number(li.dataset.index) === index));
+
     // Keep one <style> per chapter at the top of the article; it is scoped to
     // :scope (the article) so book CSS cannot leak into the app chrome.
     root.innerHTML = '';
@@ -413,8 +513,21 @@
     }
     const body = document.createElement('div');
     body.className = 'chapter-body';
-    body.innerHTML = ch.html;
     root.appendChild(body);
+
+    // PDFs render asynchronously into a host element (canvas + text layer).
+    if (ch.host) {
+      const target = ch.host || root;
+      if (typeof target.paintChapter === 'function') {
+        await target.paintChapter(index, body);
+      } else {
+        body.innerHTML = ch.html || '';
+      }
+      // Late highlights must not paint over a canvas that is still drawing.
+      body.dataset.pdfReady = '1';
+    } else {
+      body.innerHTML = ch.html;
+    }
 
     // Highlights for this chapter only.
     const mine = state.highlights.filter((h) => h.chapter === ch.path || h.chapter === index);
@@ -423,12 +536,6 @@
       // Keep the data, but tell the truth about why the marks are missing.
       console.warn('unanchored highlights', orphans);
     }
-
-    $('#rd-chapter').textContent = ch.title || `第 ${index + 1} 節`;
-    $('#chapter-pos').textContent = `${index + 1} / ${total}`;
-    $('#btn-prev').disabled = index === 0;
-    $('#btn-next').disabled = index === total - 1;
-    $$('#toc-list li').forEach((li) => li.classList.toggle('on', Number(li.dataset.index) === index));
 
     const scroller = $('#scroll-area');
     scroller.scrollTop = 0;
@@ -514,16 +621,102 @@
     }
   }
 
+  /* ─────────────────────────── fullscreen & immersive mode ─────────────────────────── */
+
+  const fullscreenSupported = () => !!(
+    document.fullscreenEnabled ||
+    document.webkitFullscreenEnabled ||
+    document.documentElement.webkitRequestFullscreen
+  );
+
+  function isFullscreen() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement);
+  }
+
+  async function toggleFullscreen() {
+    if (!fullscreenSupported()) {
+      // iOS Safari has no Fullscreen API on iPhone. Fall back to immersive mode
+      // rather than a dead button: the reading column expands to the same area.
+      setZen(true);
+      toast('這個瀏覽器不支援全螢幕，已切換為沉浸模式', null, 3200);
+      return;
+    }
+    try {
+      if (isFullscreen()) {
+        await (document.exitFullscreen ? document.exitFullscreen() : document.webkitExitFullscreen());
+      } else {
+        const el = document.documentElement;
+        if (el.requestFullscreen) await el.requestFullscreen({ navigationUI: 'hide' });
+        else await el.webkitRequestFullscreen();
+      }
+    } catch (e) {
+      // A rejected request (permissions policy, iframe, user gesture lost) must
+      // not leave the icon lying about being fullscreen.
+      toast('無法進入全螢幕：' + (e.message || e), 'err', 4000);
+    }
+    syncFullscreenUi();
+  }
+
+  function syncFullscreenUi() {
+    const on = isFullscreen();
+    const btn = $('#btn-full');
+    if (btn) btn.setAttribute('aria-pressed', String(on));
+    document.body.classList.toggle('is-fullscreen', on);
+    // A PDF page has to be re-fitted to the new viewport size.
+    if (state.epub && state.epub.format === 'pdf') {
+      clearTimeout(syncFullscreenUi._t);
+      syncFullscreenUi._t = setTimeout(() => renderChapter(state.chapter, null), 220);
+    }
+  }
+
+  /* Immersive ("zen") mode: the toolbars step out of the way. Tapping the text
+   * brings them back, and so does moving the pointer to the top edge — on a
+   * phone the tap is the only one that exists, which is why it is primary. */
+  function setZen(on) {
+    document.body.classList.toggle('zen', on);
+    const btn = $('#btn-zen');
+    if (btn) btn.setAttribute('aria-pressed', String(on));
+    if (on) { closeDrawers(); hideSelBar(); }
+    setPrefSafe('zen', on);
+  }
+
+  function setPrefSafe(key, value) {
+    state.prefs[key] = value;
+    try { savePrefs(); } catch (_) {}
+  }
+
   /* ─────────────────────────── TOC / notes ─────────────────────────── */
 
   function renderToc() {
     const list = $('#toc-list');
     list.innerHTML = '';
     if (!state.epub) return;
-    const entries = state.epub.toc.length
-      ? state.epub.toc.map((e) => ({ label: e.label, chapter: state.epub.spineIndexByName.get(e.path), anchor: (e.href || '').split('#')[1] }))
-          .filter((e) => e.chapter !== undefined)
-      : state.epub.chapters.map((c, i) => ({ label: c.title || `第 ${i + 1} 節`, chapter: i, anchor: null }));
+
+    // Three shapes of TOC come out of the format readers:
+    //   EPUB      → { label, path, href }  (path resolved through spineIndexByName)
+    //   MOBI/PDF  → { label, chapter }     (already a chapter index)
+    //   TXT       → []                     (fall back to chapter titles)
+    // Never assume spineIndexByName exists: only the EPUB parser builds it.
+    const book = state.epub;
+    let entries;
+    if (book.toc && book.toc.length && book.toc[0] && book.toc[0].chapter !== undefined) {
+      entries = book.toc.map((e) => ({ label: e.label, chapter: e.chapter, anchor: e.anchor || null }));
+    } else if (book.toc && book.toc.length && book.spineIndexByName) {
+      entries = book.toc
+        .map((e) => ({
+          label: e.label,
+          chapter: book.spineIndexByName.get(e.path),
+          anchor: (e.href || '').split('#')[1] || null,
+        }))
+        .filter((e) => e.chapter !== undefined);
+    } else {
+      entries = book.chapters.map((c, i) => ({
+        label: c.title || `第 ${i + 1} 節`,
+        chapter: i,
+        anchor: null,
+      }));
+    }
+    entries = entries.filter((e) => Number.isInteger(e.chapter) && e.chapter < book.chapters.length);
 
     for (const e of entries) {
       const li = document.createElement('li');
@@ -957,6 +1150,18 @@
         applyPrefs(); savePrefs();
       });
     });
+    $('#opt-fullbleed').addEventListener('change', (e) => {
+      state.prefs.fullBleed = e.target.checked;
+      applyPrefs(); savePrefs();
+      // A PDF page has to be re-fitted to the new column width.
+      if (state.epub && state.epub.format === 'pdf') renderChapter(state.chapter, null);
+    });
+
+    // fullscreen + zen (immersive) reading
+    $('#btn-full').addEventListener('click', toggleFullscreen);
+    $('#btn-zen').addEventListener('click', () => setZen(!document.body.classList.contains('zen')));
+    document.addEventListener('fullscreenchange', syncFullscreenUi);
+    document.addEventListener('webkitfullscreenchange', syncFullscreenUi);
 
     // keyboard
     document.addEventListener('keydown', (e) => {
@@ -965,14 +1170,47 @@
           if (!$('#hl-pop').hidden) return hideHlPop();
           if (!$('#scrim').hidden) return closeDrawers();
           if (!window.getSelection().isCollapsed) return hideSelBar();
+          if (document.body.classList.contains('zen')) return setZen(false);
+          if (isFullscreen()) return toggleFullscreen();
           return closeReader();
         }
-        if (e.target.matches('input, textarea, select')) return;
+        // e.target is Document when nothing is focused — it has no .matches().
+        const tgt = e.target;
+        if (tgt && typeof tgt.matches === 'function' && tgt.matches('input, textarea, select')) return;
         if (e.key === 'ArrowLeft' || e.key === 'PageUp') { renderChapter(state.chapter - 1, null); }
         if (e.key === 'ArrowRight' || e.key === 'PageDown') { renderChapter(state.chapter + 1, null); }
-        if (e.key.toLowerCase() === 'f') { $('#btn-aa').click(); }
+        const k = e.key.toLowerCase();
+        if (k === 'f') { $('#btn-aa').click(); }
+        if (k === 'z') { setZen(!document.body.classList.contains('zen')); }
+        if (k === 'd') { state.prefs.theme = resolvedTheme() === 'dark' ? 'light' : 'dark'; applyPrefs(); savePrefs(); }
+        if (k === 'F11' || e.key === 'F11') { e.preventDefault(); toggleFullscreen(); }
       }
     });
+
+    // zen mode: a tap on the text (not on a link or a mark) toggles the chrome
+    $('#chapter').addEventListener('click', (e) => {
+      if (!document.body.classList.contains('zen')) return;
+      if (e.target.closest('a[data-yomu-chapter], mark[data-hl-id]')) return;
+      if (!window.getSelection().isCollapsed) return;   // a tap that selected text is not a chrome tap
+      setZen(false);
+    });
+    // and a pointer resting at the very top of the window is a request for the bar
+    document.addEventListener('mousemove', (e) => {
+      if (!document.body.classList.contains('zen')) return;
+      if (e.clientY < 12) setZen(false);
+    }, { passive: true });
+
+    // keep the reading column honest when the viewport changes (rotation,
+    // desktop window resize, mobile browser chrome collapsing on scroll)
+    let resizeTimer = null;
+    const onResize = () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (state.epub && state.epub.format === 'pdf') renderChapter(state.chapter, null);
+      }, 260);
+    };
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
 
     window.addEventListener('beforeunload', (e) => {
       if (state.dirty && state.book) {
