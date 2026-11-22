@@ -15,7 +15,7 @@
   const PREFS_KEY = 'yomu.prefs.v1';
   const DEFAULTS = {
     theme: 'auto', size: 100, leading: 170, width: 700, font: 'serif',
-    fullBleed: false, lang: 'auto', zen: false,
+    fullBleed: false, lang: 'auto', zen: false, sort: 'recent',
   };
 
   const I18N = window.YomuI18n;
@@ -31,6 +31,11 @@
     saving: false,
     dirty: false,
     lastContinueId: null,
+    shelves: [],          // [{id, name, ...}]
+    shelf: null,          // active shelf id, null = All books
+    sort: 'recent',       // recent | added | title | author
+    pickShelfFor: null,   // book id whose shelf picker is open
+    shelfManagerOpen: false,
   };
 
   /* ─────────────────────────── helpers ─────────────────────────── */
@@ -72,6 +77,7 @@
       const raw = localStorage.getItem(PREFS_KEY);
       if (raw) state.prefs = { ...DEFAULTS, ...JSON.parse(raw) };
     } catch (_) { /* corrupt prefs are not worth a dialog */ }
+    state.sort = state.prefs.sort || 'recent';
     // Language first: everything applied after this point is already translated.
     I18N.set(state.prefs.lang === 'auto' ? I18N.detect() : state.prefs.lang);
     I18N.applyI18n();
@@ -84,6 +90,8 @@
     state.prefs.lang = value;
     I18N.set(value === 'auto' ? I18N.detect() : value);
     I18N.applyI18n();
+    const sel = $('#opt-lang');
+    if (sel) sel.dataset.built = '';   // force relabelling in the new language
     savePrefs();
     applyPrefs();
     // Generated labels (Section 12 / Page 3) live in the parsed book, so the
@@ -98,6 +106,7 @@
       }
       renderNotes();
     }
+    renderShelfChrome();
     renderShelf();
     renderContinue();
     // The storage note is built from a template too; without this it keeps the
@@ -106,10 +115,13 @@
     toast(t('toast.langchanged'), 'ok', 1400);
   }
 
-  /* Cycle zh-Hant → en → zh-Hant for the menu item. */
+  /* Cycle through every supported language in picker order. With more than two
+   * locales a blind cycle stops being useful, so the settings drawer's select is
+   * the precise control; this is the quick one-key path. */
   function cycleLanguage() {
-    const next = I18N.get() === 'en' ? 'zh-Hant' : 'en';
-    setLanguage(next);
+    const list = I18N.SUPPORTED;
+    const at = list.indexOf(I18N.get());
+    setLanguage(list[(at + 1) % list.length]);
   }
 
   function savePrefs() {
@@ -170,7 +182,17 @@
     const ow = $('#out-width'); if (ow) ow.textContent = String(p.width);
     const of = $('#opt-font'); if (of) of.value = p.font;
     const fb = $('#opt-fullbleed'); if (fb) fb.checked = !!p.fullBleed;
-    const lg = $('#opt-lang'); if (lg) lg.value = p.lang === 'auto' ? 'auto' : I18N.get();
+    const lg = $('#opt-lang');
+    if (lg) {
+      // Rebuild each time: the option labels are language names, and the list
+      // grows when a locale is added.
+      const want = p.lang === 'auto' ? 'auto' : I18N.get();
+      if (lg.dataset.built !== I18N.SUPPORTED.join(',')) {
+        I18N.fillLanguageSelect(lg);
+        lg.dataset.built = I18N.SUPPORTED.join(',');
+      }
+      lg.value = want;
+    }
     $$('#drawer-aa .seg button').forEach((b) => b.classList.toggle('on', b.dataset.theme === p.theme));
 
     const meta = document.querySelector('meta[name="theme-color"]');
@@ -202,26 +224,348 @@
 
   async function refreshLibrary() {
     state.books = await Store.listBooks();
+    await refreshShelves();
+    renderShelfChrome();
     renderShelf();
     renderContinue();
     updateStorageNote();
   }
 
+
+  /* ─────────────────────────── shelves ─────────────────────────── */
+
+  /* Shelf state lives in IndexedDB (rows) + an array on each book. Keeping the
+   * two in step is the whole job here; the render is deliberately dumb. */
+
+  async function refreshShelves() {
+    try {
+      state.shelves = await Store.listShelves();
+    } catch (e) {
+      state.shelves = [];
+      toast(t('toast.libfail', { msg: e.message || e }), 'err', 5000);
+    }
+    // A shelf deleted in another tab (or by a restore) must not stay selected,
+    // otherwise the grid goes permanently empty with no way back.
+    if (state.shelf && !state.shelves.some((sh) => sh.id === state.shelf)) state.shelf = null;
+  }
+
+  function activeShelf() {
+    return state.shelf ? state.shelves.find((sh) => sh.id === state.shelf) || null : null;
+  }
+
+  function shelfName(id) {
+    const sh = state.shelves.find((x) => x.id === id);
+    return sh ? sh.name : '';
+  }
+
+  function bookShelves(b) {
+    return Array.isArray(b.shelves) ? b.shelves.filter((id) => shelfName(id)) : [];
+  }
+
+  /* Chips row + toolbar. This is chrome, so it is re-rendered on language
+   * change and after every shelf mutation. */
+  function renderShelfChrome() {
+    const row = $('#shelf-chips');
+    if (!row) return;
+    row.innerHTML = '';
+
+    const total = state.books.length;
+    const all = document.createElement('button');
+    all.type = 'button';
+    all.className = 'chip' + (state.shelf === null ? ' on' : '');
+    all.dataset.shelf = '';
+    all.textContent = t('shelf.all') + ' · ' + total;
+    all.addEventListener('click', () => selectShelf(null));
+    row.appendChild(all);
+
+    for (const sh of state.shelves) {
+      const n = state.books.filter((b) => bookShelves(b).includes(sh.id)).length;
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip' + (state.shelf === sh.id ? ' on' : '');
+      chip.dataset.shelf = sh.id;
+      chip.dataset.count = String(n);
+      chip.textContent = sh.name + ' · ' + n;
+      chip.title = sh.name;
+      chip.addEventListener('click', () => selectShelf(sh.id));
+      // Dropping a book card onto a chip files it — the fastest way to sort a
+      // pile of new imports.
+      chip.addEventListener('dragover', (e) => {
+        if (!e.dataTransfer || !Array.from(e.dataTransfer.types || []).includes('text/plain')) return;
+        e.preventDefault();
+        chip.classList.add('drop');
+      });
+      chip.addEventListener('dragleave', () => chip.classList.remove('drop'));
+      chip.addEventListener('drop', async (e) => {
+        chip.classList.remove('drop');
+        const id = e.dataTransfer && e.dataTransfer.getData('text/plain');
+        if (!id) return;
+        e.preventDefault();
+        e.stopPropagation();
+        await Store.toggleBookShelf(id, sh.id, true);
+        await refreshLibrary();
+        toast(t('toast.moved', { name: sh.name }), 'ok', 1600);
+      });
+      row.appendChild(chip);
+    }
+
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'chip chip-add';
+    add.dataset.action = 'new-shelf';
+    add.textContent = '+ ' + t('lib.newShelf');
+    add.setAttribute('aria-label', t('lib.newShelf'));
+    add.addEventListener('click', createShelf);
+    row.appendChild(add);
+
+    const sort = $('#sort-select');
+    if (sort) {
+      sort.value = state.sort;
+      const opts = [['recent', 'lib.sort.recent'], ['added', 'lib.sort.added'],
+                    ['title', 'lib.sort.title'], ['author', 'lib.sort.author']];
+      sort.innerHTML = '';
+      for (const [value, key] of opts) {
+        const o = document.createElement('option');
+        o.value = value;
+        o.textContent = t(key);
+        sort.appendChild(o);
+      }
+      sort.value = state.sort;
+    }
+    const sortLabel = $('#sort-label');
+    if (sortLabel) sortLabel.textContent = t('lib.sort');
+  }
+
+  function sortedBooks(list) {
+    const items = list.slice();
+    const by = state.sort;
+    const az = (x, y) => String(x || '').localeCompare(String(y || ''), I18N.get(), { sensitivity: 'base' });
+    if (by === 'title') items.sort((a, b) => az(a.title, b.title));
+    else if (by === 'author') items.sort((a, b) => az(a.author, b.author) || az(a.title, b.title));
+    else if (by === 'added') items.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+    else items.sort((a, b) => (b.lastOpenedAt || b.addedAt || 0) - (a.lastOpenedAt || a.addedAt || 0));
+    return items;
+  }
+
+  function selectShelf(id) {
+    state.shelf = id || null;
+    renderShelfChrome();
+    renderShelf();
+    // Keep the choice in the URL hash so a reload (or a phone share) lands on
+    // the same shelf instead of silently back on "All books".
+    try {
+      const u = new URL(location.href);
+      if (id) u.hash = 'shelf=' + encodeURIComponent(id); else u.hash = '';
+      history.replaceState(null, '', u);
+    } catch (_) {}
+  }
+
+  function restoreShelfFromHash() {
+    const m = /(?:^#|&)shelf=([^&]+)/.exec(location.hash || '');
+    if (!m) return;
+    try {
+      const id = decodeURIComponent(m[1]);
+      if (state.shelves.some((sh) => sh.id === id)) state.shelf = id;
+    } catch (_) {}
+  }
+
+  async function createShelf() {
+    const name = (window.prompt(t('shelf.namePrompt')) || '').trim();
+    if (!name) return;
+    if (state.shelves.some((sh) => sh.name.toLowerCase() === name.toLowerCase())) {
+      toast(t('shelf.nameTaken'), 'err', 2400);
+      return;
+    }
+    const shelf = { id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, createdAt: Date.now() };
+    await Store.putShelf(shelf);
+    await refreshShelves();
+    selectShelf(shelf.id);
+    toast(t('shelf.created', { name }), 'ok');
+  }
+
+  async function renameShelf(sh) {
+    const name = (window.prompt(t('shelf.rename'), sh.name) || '').trim();
+    if (!name || name === sh.name) return;
+    if (state.shelves.some((x) => x.id !== sh.id && x.name.toLowerCase() === name.toLowerCase())) {
+      toast(t('shelf.nameTaken'), 'err', 2400);
+      return;
+    }
+    await Store.putShelf({ ...sh, name });
+    await refreshShelves();
+    renderShelfChrome();
+    renderShelf();
+    toast(t('shelf.renamed'), 'ok');
+  }
+
+  async function deleteShelf(sh) {
+    if (!window.confirm(t('shelf.deleteConfirm', { name: sh.name }))) return;
+    await Store.deleteShelf(sh.id);
+    if (state.shelf === sh.id) state.shelf = null;
+    await refreshShelves();
+    await refreshLibrary();
+    toast(t('shelf.deleted'), 'ok');
+  }
+
+  /* Per-book shelf picker: a checkbox list of every shelf. Used from the card
+   * menu, because a book can sit on several shelves at once. */
+  function openShelfPicker(book) {
+    state.pickShelfFor = book.id;
+    const pop = $('#shelf-pop');
+    if (!pop) return;
+    $('#shelf-pop-title').textContent = t('shelf.picker', { title: book.title || '—' });
+    const list = $('#shelf-pop-list');
+    list.innerHTML = '';
+
+    if (!state.shelves.length) {
+      const p = document.createElement('p');
+      p.className = 'muted';
+      p.textContent = t('shelf.empty');
+      list.appendChild(p);
+    }
+
+    for (const sh of state.shelves) {
+      const on = bookShelves(book).includes(sh.id);
+      const lab = document.createElement('label');
+      lab.className = 'shelf-pick';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = on;
+      cb.dataset.shelf = sh.id;
+      cb.addEventListener('change', async () => {
+        await Store.toggleBookShelf(book.id, sh.id, cb.checked);
+        await refreshLibrary();
+        renderShelfChrome();
+      });
+      const span = document.createElement('span');
+      span.textContent = sh.name;
+      lab.append(cb, span);
+      list.appendChild(lab);
+    }
+
+    const foot = $('#shelf-pop-foot');
+    foot.innerHTML = '';
+    if (bookShelves(book).length) {
+      const off = document.createElement('button');
+      off.type = 'button';
+      off.className = 'btn btn-sm';
+      off.textContent = t('lib.removeFromShelf');
+      off.addEventListener('click', async () => {
+        await Store.setBookShelves(book.id, []);
+        await refreshLibrary();
+        renderShelfChrome();
+        closeShelfPicker();
+      });
+      foot.appendChild(off);
+    }
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'btn btn-sm btn-primary';
+    add.textContent = '+ ' + t('lib.newShelf');
+    add.addEventListener('click', async () => {
+      const name = (window.prompt(t('shelf.namePrompt')) || '').trim();
+      if (!name) return;
+      if (state.shelves.some((sh) => sh.name.toLowerCase() === name.toLowerCase())) {
+        toast(t('shelf.nameTaken'), 'err', 2400);
+        return;
+      }
+      const shelf = { id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, createdAt: Date.now() };
+      await Store.putShelf(shelf);
+      await Store.toggleBookShelf(book.id, shelf.id, true);
+      await refreshShelves();
+      await refreshLibrary();
+      renderShelfChrome();
+      openShelfPicker({ ...book, shelves: [...bookShelves(book), shelf.id] });
+    });
+    foot.appendChild(add);
+
+    pop.hidden = false;
+    $('#scrim').hidden = false;
+  }
+
+  function closeShelfPicker() {
+    const pop = $('#shelf-pop');
+    if (pop) pop.hidden = true;
+    if ($('#drawer-aa').hidden && $('#drawer-toc').hidden && $('#drawer-notes').hidden) {
+      $('#scrim').hidden = true;
+    }
+    state.pickShelfFor = null;
+  }
+
+  /* Shelf manager: rename / delete every shelf in one list. */
+  function openShelfManager() {
+    const pop = $('#shelf-manager');
+    if (!pop) return;
+    const list = $('#shelf-manager-list');
+    list.innerHTML = '';
+    if (!state.shelves.length) {
+      const p = document.createElement('p');
+      p.className = 'muted';
+      p.textContent = t('shelf.empty');
+      list.appendChild(p);
+    }
+    for (const sh of state.shelves) {
+      const n = state.books.filter((b) => bookShelves(b).includes(sh.id)).length;
+      const row = document.createElement('div');
+      row.className = 'shelf-mrow';
+      const name = document.createElement('strong');
+      name.textContent = sh.name;
+      const count = document.createElement('span');
+      count.className = 'muted';
+      count.textContent = t('shelf.bookCount', { n });
+      const rn = document.createElement('button');
+      rn.type = 'button';
+      rn.className = 'btn btn-sm';
+      rn.textContent = t('shelf.rename');
+      rn.addEventListener('click', () => renameShelf(sh).then(() => openShelfManager()));
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'btn btn-sm btn-danger';
+      del.textContent = t('shelf.delete');
+      del.addEventListener('click', () => deleteShelf(sh).then(() => openShelfManager()));
+      row.append(name, count, rn, del);
+      list.appendChild(row);
+    }
+    pop.hidden = false;
+    $('#scrim').hidden = false;
+  }
+
+  function closeShelfManager() {
+    const pop = $('#shelf-manager');
+    if (pop) pop.hidden = true;
+    if ($('#drawer-aa').hidden && $('#drawer-toc').hidden && $('#drawer-notes').hidden) {
+      $('#scrim').hidden = true;
+    }
+  }
+
   function renderShelf() {
     const shelf = $('#shelf');
     const q = ($('#search').value || '').trim().toLowerCase();
-    const books = state.books.filter((b) => {
+    const inShelf = (b) => !state.shelf || bookShelves(b).includes(state.shelf);
+    const books = sortedBooks(state.books.filter((b) => {
+      if (!inShelf(b)) return false;
       if (!q) return true;
       return (b.title || '').toLowerCase().includes(q) || (b.author || '').toLowerCase().includes(q);
-    });
+    }));
 
+    // "Empty" means an empty library, not an empty filter — a filtered grid
+    // shows the no-match line instead, so the import button does not vanish.
     $('#empty').hidden = state.books.length > 0;
+    const noShelfBooks = $('#shelf-empty');
+    if (noShelfBooks) noShelfBooks.hidden = !(state.shelf && !books.length && !q);
 
     shelf.innerHTML = '';
     for (const b of books) {
       const card = document.createElement('div');
       card.className = 'card';
       card.dataset.id = b.id;
+      // Drag a card onto a shelf chip to file it.
+      card.draggable = true;
+      card.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', b.id);
+        e.dataTransfer.effectAllowed = 'copy';
+        card.classList.add('dragging');
+      });
+      card.addEventListener('dragend', () => card.classList.remove('dragging'));
 
       const cover = document.createElement('div');
       cover.className = 'card-cover';
@@ -255,6 +599,24 @@
         cover.appendChild(pr);
       }
 
+      // Shelf button: only when shelves exist, so a fresh library stays clean.
+      if (state.shelves.length) {
+        const shb = document.createElement('button');
+        shb.className = 'card-shelf';
+        shb.type = 'button';
+        shb.title = t('lib.moveTo');
+        shb.setAttribute('aria-label', t('lib.moveTo') + ' — ' + (b.title || ''));
+        shb.textContent = '▤';
+        const on = bookShelves(b);
+        if (on.length) shb.dataset.count = String(on.length);
+        shb.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          openShelfPicker(b);
+        });
+        cover.appendChild(shb);
+      }
+
       const del = document.createElement('button');
       del.className = 'card-del';
       del.type = 'button';
@@ -277,6 +639,14 @@
       authorEl.className = 'card-author';
       authorEl.textContent = b.author || '—';
       meta.append(titleEl, authorEl);
+      // Where it is filed, so you can tell at a glance in "All books".
+      const onShelves = bookShelves(b).map(shelfName).filter(Boolean);
+      if (onShelves.length && !state.shelf) {
+        const shEl = document.createElement('span');
+        shEl.className = 'card-shelves';
+        shEl.textContent = onShelves.join(' · ');
+        meta.appendChild(shEl);
+      }
 
       // Format badge: a PDF on the shelf should not pretend to be an EPUB.
       const fmt = (b.format || 'epub').toUpperCase().replace('MARKDOWN', 'MD');
@@ -295,7 +665,7 @@
       shelf.appendChild(card);
     }
 
-    if (!books.length && state.books.length) {
+    if (!books.length && state.books.length && q) {
       const p = document.createElement('p');
       p.className = 'muted';
       p.style.gridColumn = '1 / -1';
@@ -1009,6 +1379,10 @@
       const el = $('#drawer-' + n);
       if (el) el.hidden = true;
     });
+    // The shelf popovers share the same scrim.
+    const sp = $('#shelf-pop'); if (sp) sp.hidden = true;
+    const sm = $('#shelf-manager'); if (sm) sm.hidden = true;
+    state.pickShelfFor = null;
     $('#scrim').hidden = true;
     ['#btn-toc', '#btn-notes', '#btn-aa'].forEach((s) => {
       const b = $(s);
@@ -1084,6 +1458,20 @@
     $('#search').addEventListener('input', renderShelf);
     $('#btn-continue').addEventListener('click', () => state.lastContinueId && openBook(state.lastContinueId));
 
+    const sortSel = $('#sort-select');
+    if (sortSel) {
+      sortSel.addEventListener('change', (e) => {
+        state.sort = e.target.value;
+        state.prefs.sort = state.sort;
+        savePrefs();
+        renderShelf();
+      });
+    }
+    const shClose = $('#shelf-pop-close');
+    if (shClose) shClose.addEventListener('click', closeShelfPicker);
+    const smClose = $('#shelf-manager-close');
+    if (smClose) smClose.addEventListener('click', closeShelfManager);
+
     $('#btn-menu').addEventListener('click', (e) => {
       e.stopPropagation();
       const menu = $('#menu');
@@ -1099,6 +1487,7 @@
       if (what === 'restore') restoreBackup();
       if (what === 'allnotes') showAllNotes();
       if (what === 'storage') updateStorageNote().then(() => toast($('#storage-note').textContent || t('toast.unknown')));
+      if (what === 'manage') openShelfManager();
       if (what === 'lang') cycleLanguage();
       if (what === 'theme') toggleTheme();
     });
@@ -1315,6 +1704,9 @@
     }
     try {
       await refreshLibrary();
+      restoreShelfFromHash();
+      renderShelfChrome();
+      renderShelf();
     } catch (e) {
       toast(t('toast.libfail', { msg: e.message || e }), 'err', 6000);
     }

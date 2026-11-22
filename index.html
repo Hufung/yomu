@@ -50,6 +50,7 @@
         <button type="button" data-menu="backup" data-i18n="lib.backup">匯出備份 (JSON)</button>
         <button type="button" data-menu="restore" data-i18n="lib.restore">還原備份</button>
         <button type="button" data-menu="allnotes" data-i18n="lib.allnotes">全部筆記</button>
+        <button type="button" data-menu="manage" data-i18n="lib.manage">管理書架…</button>
         <button type="button" data-menu="storage" data-i18n="lib.storage">儲存空間</button>
         <button type="button" data-menu="lang" data-i18n="lib.language">語言 / Language</button>
         <button type="button" data-menu="theme" data-i18n="lib.theme">切換深色模式</button>
@@ -70,7 +71,18 @@
 
   <div id="drop-hint" class="drop-hint" hidden data-i18n="drop.hint">放開以匯入電子書</div>
 
+  <!-- shelves: one row of chips + sort. Rendered by renderShelfChrome(). -->
+  <nav id="shelf-bar" class="shelf-bar" aria-label="shelves">
+    <div id="shelf-chips" class="shelf-chips" data-i18n-attr="aria-label:shelf.filter"></div>
+    <label class="sort-wrap">
+      <span id="sort-label" class="visually-hidden" data-i18n="lib.sort">排序</span>
+      <select id="sort-select" data-i18n-attr="aria-label:lib.sort"></select>
+    </label>
+  </nav>
+
   <section id="shelf" class="shelf" aria-live="polite"></section>
+
+  <p id="shelf-empty" class="muted shelf-empty" hidden data-i18n="shelf.empty">這個書架還沒有書。</p>
 
   <div id="empty" class="empty" hidden>
     <svg viewBox="0 0 24 24" aria-hidden="true" class="empty-icon"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5v-13Z" opacity=".45"/><path d="M20 5.5c0-.8-.7-1.5-1.5-1.5H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5v-13Z"/></svg>
@@ -217,6 +229,25 @@
       <button type="button" id="hl-save" class="btn btn-sm btn-primary" data-i18n="hl.save">儲存</button>
     </div>
   </div>
+</div>
+
+<!-- shelf picker (per book) -->
+<div id="shelf-pop" class="pop" role="dialog" aria-modal="true" aria-labelledby="shelf-pop-title" hidden>
+  <div class="drawer-head">
+    <strong id="shelf-pop-title"></strong>
+    <button class="btn btn-icon" type="button" id="shelf-pop-close" data-i18n-attr="aria-label:close">✕</button>
+  </div>
+  <div id="shelf-pop-list" class="shelf-pick-list"></div>
+  <div id="shelf-pop-foot" class="pop-foot"></div>
+</div>
+
+<!-- shelf manager -->
+<div id="shelf-manager" class="pop" role="dialog" aria-modal="true" aria-labelledby="shelf-manager-title" hidden>
+  <div class="drawer-head">
+    <strong id="shelf-manager-title" data-i18n="shelf.manageTitle">書架</strong>
+    <button class="btn btn-icon" type="button" id="shelf-manager-close" data-i18n-attr="aria-label:close">✕</button>
+  </div>
+  <div id="shelf-manager-list" class="shelf-mlist"></div>
 </div>
 
 <!-- toasts -->

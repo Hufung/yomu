@@ -8,12 +8,20 @@
  *   highlights { id, bookId, chapter, color, text, note,
  *                start, end, prefix, suffix, createdAt }
  *   progress   { bookId, chapter, ratio, updatedAt }
+ *   shelves    { id, name, sort, createdAt }
+ *
+ * A book's shelves are a plain array on the book row (`shelves: [shelfId]`),
+ * not a join store: the library is always read whole, so an array costs one
+ * field instead of a second round trip per book, and deleting a shelf is a
+ * single pass over the books that still works when the shelf row is already
+ * gone. v2 only adds the store and back-fills nothing — an absent array means
+ * "no shelves", which is exactly what older rows should mean.
  */
 (function () {
   'use strict';
 
   const DB_NAME = 'yomu';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   let dbPromise = null;
 
   function open() {
@@ -34,6 +42,9 @@
         }
         if (!db.objectStoreNames.contains('progress')) {
           db.createObjectStore('progress', { keyPath: 'bookId' });
+        }
+        if (!db.objectStoreNames.contains('shelves')) {
+          db.createObjectStore('shelves', { keyPath: 'id' });
         }
       };
       req.onsuccess = () => resolve(req.result);
@@ -150,6 +161,83 @@
       });
     },
 
+    /* ---- shelves ---- */
+
+    async listShelves() {
+      const db = await open();
+      const rows = await reqOf(db.transaction('shelves').objectStore('shelves').getAll());
+      return rows.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    },
+
+    async putShelf(shelf) {
+      return tx('shelves', 'readwrite', (s) => s.put(shelf));
+    },
+
+    /* Delete the shelf and unfile every book that pointed at it, in one
+     * transaction. Books are never deleted — that is the whole point of
+     * shelves being a view rather than a folder. */
+    async deleteShelf(id) {
+      return new Promise(async (resolve, reject) => {
+        const db = await open();
+        const t = db.transaction(['shelves', 'books'], 'readwrite');
+        t.objectStore('shelves').delete(id);
+        const books = t.objectStore('books');
+        const cur = books.openCursor();
+        cur.onsuccess = () => {
+          const c = cur.result;
+          if (!c) return;
+          const row = c.value;
+          if (Array.isArray(row.shelves) && row.shelves.includes(id)) {
+            const next = { ...row, shelves: row.shelves.filter((x) => x !== id) };
+            c.update(next);
+          }
+          c.continue();
+        };
+        t.oncomplete = () => resolve();
+        t.onerror = () => reject(t.error);
+        t.onabort = () => reject(t.error);
+      });
+    },
+
+    /* Set membership in one place so the UI never hand-builds the array. */
+    async setBookShelves(bookId, shelfIds) {
+      return new Promise(async (resolve, reject) => {
+        const db = await open();
+        const t = db.transaction('books', 'readwrite');
+        const books = t.objectStore('books');
+        const get = books.get(bookId);
+        get.onsuccess = () => {
+          const row = get.result;
+          if (!row) return;                  // deleted under us; nothing to do
+          books.put({ ...row, shelves: Array.from(new Set(shelfIds)) });
+        };
+        t.oncomplete = () => resolve();
+        t.onerror = () => reject(t.error);
+        t.onabort = () => reject(t.error);
+      });
+    },
+
+    /* Toggle one shelf on/off for a book; returns the resulting array. */
+    async toggleBookShelf(bookId, shelfId, on) {
+      const book = await this.getBook(bookId);
+      if (!book) return [];
+      const cur = Array.isArray(book.shelves) ? book.shelves : [];
+      const next = on ? [...cur, shelfId] : cur.filter((x) => x !== shelfId);
+      await this.setBookShelves(bookId, next);
+      return Array.from(new Set(next));
+    },
+
+    /* Adding several books to a shelf at once (drag onto a chip / bulk move). */
+    async addBooksToShelf(bookIds, shelfId) {
+      for (const id of bookIds) {
+        const book = await this.getBook(id);
+        if (!book) continue;
+        const cur = Array.isArray(book.shelves) ? book.shelves : [];
+        if (cur.includes(shelfId)) continue;
+        await this.putBook({ ...book, shelves: [...cur, shelfId] });
+      }
+    },
+
     /* ---- highlights ---- */
     async listHighlights(bookId) {
       const db = await open();
@@ -196,10 +284,11 @@
     /* ---- backup ---- */
     async exportData() {
       const db = await open();
-      const [books, highlights, progress] = await Promise.all([
+      const [books, highlights, progress, shelves] = await Promise.all([
         reqOf(db.transaction('books').objectStore('books').getAll()),
         reqOf(db.transaction('highlights').objectStore('highlights').getAll()),
         reqOf(db.transaction('progress').objectStore('progress').getAll()),
+        reqOf(db.transaction('shelves').objectStore('shelves').getAll()),
       ]);
       return {
         app: 'yomu',
@@ -209,12 +298,18 @@
         books: books.map(({ cover, ...rest }) => rest),
         highlights,
         progress,
+        shelves,
       };
     },
 
     async importData(payload) {
       const db = await open();
-      const t = db.transaction(['books', 'highlights', 'progress'], 'readwrite');
+      const t = db.transaction(['books', 'highlights', 'progress', 'shelves'], 'readwrite');
+      const shel = t.objectStore('shelves');
+      for (const sh of payload.shelves || []) {
+        const get = shel.get(sh.id);
+        get.onsuccess = () => { if (!get.result) shel.put(sh); };
+      }
       const books = t.objectStore('books');
       for (const b of payload.books || []) {
         // Merge: never clobber an existing book row (it holds the cover Blob).
