@@ -90,6 +90,7 @@
     state.prefs.lang = value;
     I18N.set(value === 'auto' ? I18N.detect() : value);
     I18N.applyI18n();
+    closeSortMenu();
     const sel = $('#opt-lang');
     if (sel) sel.dataset.built = '';   // force relabelling in the new language
     savePrefs();
@@ -274,7 +275,8 @@
     all.type = 'button';
     all.className = 'chip' + (state.shelf === null ? ' on' : '');
     all.dataset.shelf = '';
-    all.textContent = t('shelf.all') + ' · ' + total;
+    all.setAttribute('aria-label', t('shelf.all') + ' · ' + total);
+    all.append(chipLabel(t('shelf.all'), total));
     all.addEventListener('click', () => selectShelf(null));
     row.appendChild(all);
 
@@ -285,8 +287,9 @@
       chip.className = 'chip' + (state.shelf === sh.id ? ' on' : '');
       chip.dataset.shelf = sh.id;
       chip.dataset.count = String(n);
-      chip.textContent = sh.name + ' · ' + n;
-      chip.title = sh.name;
+      chip.append(chipLabel(sh.name, n));
+      chip.title = sh.name + ' · ' + n;
+      chip.setAttribute('aria-label', sh.name + ' · ' + n);
       chip.addEventListener('click', () => selectShelf(sh.id));
       // Dropping a book card onto a chip files it — the fastest way to sort a
       // pile of new imports.
@@ -309,22 +312,19 @@
       row.appendChild(chip);
     }
 
-    const add = document.createElement('button');
-    add.type = 'button';
-    add.className = 'chip chip-add';
-    add.dataset.action = 'new-shelf';
-    add.textContent = '+ ' + t('lib.newShelf');
-    add.setAttribute('aria-label', t('lib.newShelf'));
-    add.addEventListener('click', createShelf);
-    row.appendChild(add);
+    const add = $('#btn-new-shelf');
+    if (add) {
+      add.setAttribute('aria-label', t('lib.newShelf'));
+      add.title = t('lib.newShelf');
+      add.querySelector('.lbl').textContent = t('lib.newShelf');
+    }
 
+    const SORTS = [['recent', 'lib.sort.recent'], ['added', 'lib.sort.added'],
+                   ['title', 'lib.sort.title'], ['author', 'lib.sort.author']];
     const sort = $('#sort-select');
     if (sort) {
-      sort.value = state.sort;
-      const opts = [['recent', 'lib.sort.recent'], ['added', 'lib.sort.added'],
-                    ['title', 'lib.sort.title'], ['author', 'lib.sort.author']];
       sort.innerHTML = '';
-      for (const [value, key] of opts) {
+      for (const [value, key] of SORTS) {
         const o = document.createElement('option');
         o.value = value;
         o.textContent = t(key);
@@ -332,8 +332,148 @@
       }
       sort.value = state.sort;
     }
+    // Phone control: a button showing the current order, plus a popover. Kept
+    // in sync here so both controls always agree on the label.
+    const now = $('#sort-now');
+    if (now) {
+      const key = (SORTS.find((x) => x[0] === state.sort) || SORTS[0])[1];
+      now.textContent = t(key);
+    }
+    const pop = $('#sort-pop');
+    if (pop) {
+      pop.innerHTML = '';
+      for (const [value, key] of SORTS) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.dataset.sort = value;
+        b.setAttribute('role', 'menuitemradio');
+        b.setAttribute('aria-checked', String(state.sort === value));
+        b.className = state.sort === value ? 'on' : '';
+        const tick = document.createElement('span');
+        tick.className = 'tick';
+        tick.textContent = '✓';
+        const lbl = document.createElement('span');
+        lbl.textContent = t(key);
+        b.append(tick, lbl);
+        b.addEventListener('click', () => {
+          setSort(value);
+          closeSortMenu();
+        });
+        pop.appendChild(b);
+      }
+    }
     const sortLabel = $('#sort-label');
     if (sortLabel) sortLabel.textContent = t('lib.sort');
+    wireChipScrollHint();
+  }
+
+  function setSort(value) {
+    state.sort = value;
+    state.prefs.sort = value;
+    savePrefs();
+    renderShelfChrome();
+    renderShelf();
+  }
+
+  function closeSortMenu() {
+    const pop = $('#sort-pop');
+    const btn = $('#btn-sort');
+    if (pop) pop.hidden = true;
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  }
+
+  /* Chip contents: <span class=chip-name> + <span class=chip-count>. Splitting
+   * them lets the name ellipsis-truncate inside a fixed max-width while the
+   * count stays legible; a single text node would either overflow the bar or be
+   * clipped mid-number. */
+  function chipLabel(name, n) {
+    const frag = document.createDocumentFragment();
+    const nm = document.createElement('span');
+    nm.className = 'chip-name';
+    nm.textContent = name;
+    const ct = document.createElement('span');
+    ct.className = 'chip-count';
+    ct.textContent = String(n);
+    frag.append(nm, ct);
+    return frag;
+  }
+
+  /* The shelf bar sticks directly UNDER the sticky library header, so a long
+   * grid can still be filtered without scrolling back to the top. The header's
+   * height is published as --lib-head-h because it includes a safe-area inset
+   * that plain CSS cannot read; measuring it keeps the two from overlapping on
+   * notched phones. */
+  function wireStickyShelfBar() {
+    const bar = $('#shelf-bar');
+    const head = $('.lib-head');
+    if (!bar || !head) return;
+
+    const syncHead = () => {
+      const h = Math.round(head.getBoundingClientRect().height);
+      document.documentElement.style.setProperty('--lib-head-h', h + 'px');
+    };
+    syncHead();
+    if (bar.dataset.stickyBound !== '1') {
+      window.addEventListener('resize', syncHead);
+      window.addEventListener('orientationchange', syncHead);
+      if (window.ResizeObserver) new ResizeObserver(syncHead).observe(head);
+      bar.dataset.stickyBound = '1';
+    }
+
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const top = bar.getBoundingClientRect().top;
+        bar.classList.toggle('stuck', top <= head.getBoundingClientRect().height + 0.5);
+      });
+    };
+    if (bar.dataset.scrollBound !== '1') {
+      window.addEventListener('scroll', onScroll, { passive: true });
+      bar.dataset.scrollBound = '1';
+    }
+    onScroll();
+  }
+
+  /* The chip strip is the only scrolling part of the bar. A right-edge fade
+   * appears while content remains off-screen — without it the last chip looks
+   * cut off by accident rather than scrollable. */
+  function wireChipScrollHint() {
+    const strip = $('#shelf-chips');
+    const bar = $('#shelf-bar');
+    if (!strip || !bar) return;
+    const tools = $('.shelf-tools');
+    const sync = () => {
+      const more = strip.scrollWidth - strip.clientWidth - strip.scrollLeft > 4;
+      bar.classList.toggle('more', more);
+      if (tools) {
+        // The fade is pinned to the strip's right edge, which is the bar width
+        // minus the fixed cluster. Measuring beats hard-coding a rem value that
+        // is 4x off on a phone.
+        document.documentElement.style.setProperty(
+          '--tools-w', Math.round(tools.getBoundingClientRect().width) + 'px');
+      }
+    };
+    if (strip.dataset.hintBound !== '1') {
+      strip.addEventListener('scroll', sync, { passive: true });
+      window.addEventListener('resize', sync);
+      // A mouse has no horizontal wheel, so translate a vertical wheel over the
+      // strip into horizontal scrolling — but only while it can still move, so
+      // the page keeps scrolling normally at either end.
+      strip.addEventListener('wheel', (e) => {
+        if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+        const max = strip.scrollWidth - strip.clientWidth;
+        if (max <= 4) return;
+        const goingRight = e.deltaY > 0;
+        const canMove = goingRight ? strip.scrollLeft < max - 1 : strip.scrollLeft > 0;
+        if (!canMove) return;
+        e.preventDefault();
+        strip.scrollLeft += e.deltaY;
+      }, { passive: false });
+      strip.dataset.hintBound = '1';
+    }
+    requestAnimationFrame(sync);
   }
 
   function sortedBooks(list) {
@@ -1460,13 +1600,26 @@
 
     const sortSel = $('#sort-select');
     if (sortSel) {
-      sortSel.addEventListener('change', (e) => {
-        state.sort = e.target.value;
-        state.prefs.sort = state.sort;
-        savePrefs();
-        renderShelf();
+      sortSel.addEventListener('change', (e) => setSort(e.target.value));
+    }
+    const sortBtn = $('#btn-sort');
+    if (sortBtn) {
+      sortBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const pop = $('#sort-pop');
+        const open = pop.hidden;
+        pop.hidden = !open;
+        sortBtn.setAttribute('aria-expanded', String(open));
       });
     }
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.shelf-tools')) closeSortMenu();
+    });
+    const newShelfBtn = $('#btn-new-shelf');
+    if (newShelfBtn) newShelfBtn.addEventListener('click', createShelf);
+    wireChipScrollHint();
+    wireStickyShelfBar();
+
     const shClose = $('#shelf-pop-close');
     if (shClose) shClose.addEventListener('click', closeShelfPicker);
     const smClose = $('#shelf-manager-close');

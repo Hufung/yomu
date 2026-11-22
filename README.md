@@ -57,9 +57,11 @@ English UI:
 | --- | --- | --- |
 | ![EN library](docs/screenshots/13-library-en.png) | ![EN dark](docs/screenshots/14-reader-dark-en.png) | ![EN settings](docs/screenshots/15-settings-en.png) |
 
-Shelves:
+Shelves — a scrolling chip strip with a fixed new-shelf / sort cluster beside it, stuck under the header while you scroll:
 
-![Shelf chips, create-shelf control and sort picker](docs/screenshots/16-shelves.png)
+| Desktop | Phone | Phone sort menu |
+| --- | --- | --- |
+| ![Shelf bar](docs/screenshots/17-shelf-bar.png) | ![Shelf bar on a phone](docs/screenshots/18-shelf-bar-phone.png) | ![Sort menu](docs/screenshots/19-sort-menu-phone.png) |
 
 ## Supported formats
 
@@ -119,6 +121,8 @@ Everything stays on the device. The only network requests the app ever makes are
 ## Languages and bookshelf
 
 The settings drawer includes English, Traditional Chinese, Simplified Chinese, Japanese and Korean (plus automatic browser detection). Shelf names and book metadata are your own data, so the UI translation never rewrites them. Books can belong to multiple shelves; deleting a shelf only clears that shelf membership, never the underlying book file. Filter with the row of shelf chips, drag a cover onto a chip to file it quickly, use the per-book shelf button for multi-shelf membership, and sort the grid from the selector on the right.
+
+The shelf bar is deliberately built so it cannot break as shelves accumulate: the strip is the only part that scrolls, it never wraps to a second row, chip names ellipsis while their counts stay whole, and the new-shelf / sort cluster is measured in JS so it can never be pushed off-screen. Under 560px the native sort `<select>` is swapped for a 40px button that opens a four-row popover — a native select needs ~120px, which is most of the strip's width on a phone, and it opens a full-screen picker anyway. It sticks directly under the library header (whose height is published as `--lib-head-h`, because it carries a safe-area inset CSS cannot read) and a right-edge fade appears only while more chips are off-screen.
 
 ## Limitations (honest list)
 

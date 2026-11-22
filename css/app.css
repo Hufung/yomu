@@ -115,39 +115,104 @@ button { cursor: pointer; }
 
 
 /* ─────────────── shelves ─────────────── */
+
+/* Three things share the bar: a scrolling chip strip, a fixed tool cluster, and
+   whatever the viewport has left. Only the strip may scroll. The layout is a
+   grid — minmax(0, 1fr) for the strip — because a flex child with long content
+   refuses to shrink below its content width and pushes the tools out of the
+   window (that is what made the header overflow at 390px). */
+/* Sticks directly under the sticky library header (--lib-head-h is measured in
+   JS because it carries a safe-area inset). Background + a hairline that only
+   appears once it is actually stuck, so in its natural position it stays
+   invisible. */
 .shelf-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: .75rem;
-  padding: 0 clamp(16px, 4vw, 40px);
-  margin-top: clamp(10px, 2vw, 18px);
+  gap: .6rem;
+  padding: .35rem clamp(16px, 4vw, 40px);
+  margin-top: clamp(6px, 1.6vw, 14px);
+  position: sticky;
+  top: var(--lib-head-h, 71px);
+  z-index: 25;
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
+  backdrop-filter: blur(12px) saturate(1.15);
+  border-bottom: 1px solid transparent;
+  transition: border-color .2s ease, box-shadow .2s ease;
 }
+.shelf-bar.stuck {
+  border-bottom-color: var(--line);
+  box-shadow: 0 10px 18px -18px rgba(0, 0, 0, .5);
+}
+
 .shelf-chips {
   display: flex;
   align-items: center;
   gap: .4rem;
   overflow-x: auto;
-  padding: 2px 2px 6px;
-  scrollbar-width: thin;
-  flex: 1;
+  overflow-y: hidden;
+  scrollbar-width: none;          /* the fade below replaces the bar */
+  -webkit-overflow-scrolling: touch;
+  padding: 2px 2px 4px;
   min-width: 0;
 }
+.shelf-chips::-webkit-scrollbar { display: none; }
+
+/* A soft edge on the right tells you the strip continues, without a scrollbar. */
+/* Fade sits in the gap between the strip and the tools, so it never paints over
+   a chip's count or the sort select. */
+.shelf-bar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: calc(clamp(16px, 4vw, 40px) + var(--tools-w, 15rem) + .6rem);  /* the gap before the tools */
+  width: 2.5rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .2s ease;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--paper) 92%, transparent));
+  border-radius: 0 4px 4px 0;
+}
+.shelf-bar.more::after { opacity: 1; }
+
 .chip {
   flex: none;
   display: inline-flex;
-  align-items: center;
-  gap: .35em;
+  align-items: baseline;
+  gap: .4em;
   min-height: 32px;
-  padding: 0 .85em;
+  max-width: 11rem;
+  padding: 0 .8em;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--paper-2);
   color: var(--ink-2);
   font-size: .8rem;
   font-weight: 600;
+  line-height: 30px;
   white-space: nowrap;
   cursor: pointer;
-  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .12s ease;
+  transition: background .15s ease, border-color .15s ease, color .15s ease,
+              transform .12s ease, box-shadow .15s ease;
+}
+/* The name can be long and user-authored; it truncates. The count never
+   truncates, so "12" can't render as "1…". */
+.chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.chip-count {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  font-size: .72rem;
+  color: var(--ink-3);
+  padding-left: .1em;
+  border-left: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  margin-left: .1em;
+  padding-left: .5em;
 }
 .chip:hover { color: var(--ink); border-color: color-mix(in srgb, var(--ink) 22%, var(--line)); }
 .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -155,13 +220,65 @@ button { cursor: pointer; }
   background: color-mix(in srgb, var(--accent) 15%, var(--paper-2));
   border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
   color: var(--accent);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--accent) 18%, transparent);
 }
+.chip.on .chip-count { color: var(--accent); opacity: .8; border-left-color: color-mix(in srgb, var(--accent) 30%, transparent); }
 .chip.drop {
   background: color-mix(in srgb, var(--accent) 26%, var(--paper-2));
   border-color: var(--accent);
   transform: translateY(-1px);
 }
-.chip-add { border-style: dashed; color: var(--ink-3); }
+
+/* tool cluster: never scrolls, never wraps */
+.shelf-tools {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  flex: none;
+  position: relative;
+  z-index: 1;
+}
+.btn-quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink-2);
+  font-weight: 600;
+}
+.btn-quiet:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink); }
+.btn-quiet svg { width: 16px; height: 16px; }
+
+.sort-wrap { flex: none; }
+#sort-select {
+  min-height: 32px;
+  max-width: 9.5rem;
+  padding: 0 1.6em 0 .7em;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-size: .8rem;
+  font-weight: 600;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b857c' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right .45em center;
+  background-size: 14px;
+  text-overflow: ellipsis;
+}
+#sort-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+[data-theme="dark"] #sort-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23827d75' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+}
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+.shelf-empty {
+  padding: 6px clamp(16px, 4vw, 40px) 40px;
+  margin: 0;
+}
 
 .sort-wrap { flex: none; }
 #sort-select {
@@ -265,9 +382,76 @@ button { cursor: pointer; }
 .shelf-mrow strong { font-weight: 650; font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shelf-mrow .btn-sm { font-size: .72rem; }
 
+/* The sort button only exists where the native select is hidden. */
+#btn-sort { display: none; }
+.sort-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 11rem;
+  padding: 5px;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  z-index: 45;
+  display: grid;
+  gap: 1px;
+}
+.sort-menu button {
+  display: flex;
+  align-items: center;
+  gap: .45em;
+  text-align: left;
+  padding: .55em .6em;
+  border: 0;
+  background: none;
+  border-radius: 8px;
+  font-size: .84rem;
+  color: var(--ink-2);
+  min-height: 34px;
+}
+.sort-menu button:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink); }
+.sort-menu button.on { color: var(--accent); font-weight: 650; background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.sort-menu button .tick { width: 14px; flex: none; opacity: 0; }
+.sort-menu button.on .tick { opacity: 1; }
+
+@media (max-width: 700px) {
+  .shelf-tools { gap: .25rem; }
+  .btn-quiet .lbl { display: none; }
+  #btn-new-shelf { width: 32px; justify-content: center; padding: 0; border-color: var(--line); }
+}
+
 @media (max-width: 560px) {
-  .shelf-bar { align-items: flex-start; }
+  /* Give the whole tool cluster's width back to the chip strip: the sort
+     becomes one 40px button that opens a 4-row popover. */
+  #sort-select, .sort-wrap { display: none; }
+  #btn-sort { display: inline-flex; width: 40px; padding: 0; justify-content: center; border-color: var(--line); }
+  #btn-sort[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+}
+
+@media (max-width: 560px) {
   .card-shelf { opacity: 1; }   /* no hover on touch: always visible */
+  .brand-sub { display: none; }
+  .brand h1 { font-size: 1.2rem; }
+  #search { width: 100%; max-width: 132px; }
+  .lib-head { gap: .5rem; padding-left: 12px; padding-right: 12px; }
+  .lib-actions { gap: .2rem; }
+  #btn-import .txt { display: none; }   /* icon-only import */
+  #btn-import { width: 40px; padding: 0; justify-content: center; }
+  .shelf-bar { padding-left: 12px; padding-right: 12px; padding-top: .2rem; padding-bottom: .2rem; }
+}
+
+@media (max-width: 380px) {
+  /* 320px is the narrowest phone worth supporting. Instead of wrapping the
+     header into two sticky rows (which eats 15% of the screen), shrink the
+     brand to its mark and let the search field absorb the freed space. Every
+     tap target keeps its 40px size. */
+  .brand h1, .brand-sub { display: none; }
+  .lib-head { gap: .4rem; padding-left: 10px; padding-right: 10px; }
+  .lib-actions { gap: .15rem; }
+  #search { width: auto; max-width: none; flex: 1 1 auto; min-width: 74px; }
+  #sort-select { max-width: 6.4rem; }
 }
 
 /* ─────────────── library ─────────────── */
@@ -279,7 +463,10 @@ button { cursor: pointer; }
   z-index: 30;
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: .75rem;
+  min-width: 0;
+  /* The search field is the only child allowed to give ground; a min-width:0
+     here and there is what stopped the row overflowing at 320px. */
   padding: max(14px, env(safe-area-inset-top)) clamp(16px, 4vw, 40px) 14px;
   background: color-mix(in srgb, var(--paper) 88%, transparent);
   backdrop-filter: blur(14px) saturate(1.2);
@@ -299,9 +486,24 @@ button { cursor: pointer; }
 }
 .brand-sub { font-family: var(--serif); color: var(--accent); opacity: .5; font-size: .95rem; }
 
-.lib-actions { margin-left: auto; display: flex; align-items: center; gap: .5rem; position: relative; }
+.lib-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  position: relative;
+  min-width: 0;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+/* Icon buttons must never shrink: a 28px target is a miss on a phone. Only the
+   search field gives ground. */
+.lib-actions > .btn,
+.lib-actions > .btn-icon { flex: none; }
 #search {
-  width: clamp(120px, 26vw, 240px);
+  width: clamp(96px, 26vw, 240px);
+  min-width: 0;
+  flex: 0 1 auto;
   min-height: 40px;
   padding: 0 .9em;
   border: 1px solid var(--line);

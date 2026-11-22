@@ -36,7 +36,7 @@
       <input id="search" type="search" autocomplete="off" data-i18n-attr="placeholder:lib.search aria-label:lib.search">
       <button id="btn-import" class="btn btn-primary" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M4 17v2.5A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5V17"/></svg>
-        <span data-i18n="lib.import">匯入</span>
+        <span class="txt" data-i18n="lib.import">匯入</span>
       </button>
       <input id="file-input" type="file" accept=".epub,.mobi,.azw3,.azw,.prc,.pdf,.txt,.md,.markdown,application/epub+zip,application/pdf,text/plain" multiple hidden>
       <button id="btn-theme-lib" class="btn btn-icon" type="button" data-i18n-attr="aria-label:reader.theme title:reader.theme">
@@ -72,12 +72,30 @@
   <div id="drop-hint" class="drop-hint" hidden data-i18n="drop.hint">放開以匯入電子書</div>
 
   <!-- shelves: one row of chips + sort. Rendered by renderShelfChrome(). -->
+  <!-- Shelves: a scrolling chip strip plus ONE fixed action cluster. The
+       cluster (new shelf + sort) never scrolls and never wraps, so it cannot be
+       pushed off-screen however many shelves exist. -->
   <nav id="shelf-bar" class="shelf-bar" aria-label="shelves">
-    <div id="shelf-chips" class="shelf-chips" data-i18n-attr="aria-label:shelf.filter"></div>
-    <label class="sort-wrap">
-      <span id="sort-label" class="visually-hidden" data-i18n="lib.sort">排序</span>
-      <select id="sort-select" data-i18n-attr="aria-label:lib.sort"></select>
-    </label>
+    <div id="shelf-chips" class="shelf-chips" role="tablist" data-i18n-attr="aria-label:shelf.filter"></div>
+    <div class="shelf-tools">
+      <button id="btn-new-shelf" class="btn btn-sm btn-quiet" type="button" data-i18n-attr="aria-label:lib.newShelf">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        <span class="lbl" data-i18n="lib.newShelf">新增書架</span>
+      </button>
+      <label class="sort-wrap">
+        <span id="sort-label" class="visually-hidden" data-i18n="lib.sort">排序</span>
+        <select id="sort-select" data-i18n-attr="aria-label:lib.sort"></select>
+      </label>
+      <!-- On phones the native select is replaced by this button + popover:
+           a native select opens a full-screen picker and needs ~120px here,
+           which is most of the strip's width. -->
+      <button id="btn-sort" class="btn btn-sm btn-quiet" type="button"
+              aria-expanded="false" aria-haspopup="true" data-i18n-attr="aria-label:lib.sort">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M4 12h7M4 17h4M17 6v12m0 0 3-3m-3 3-3-3"/></svg>
+        <span class="lbl" id="sort-now"></span>
+      </button>
+      <div id="sort-pop" class="menu sort-menu" hidden></div>
+    </div>
   </nav>
 
   <section id="shelf" class="shelf" aria-live="polite"></section>
