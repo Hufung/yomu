@@ -1215,6 +1215,95 @@ body.is-fullscreen .reader-bar { padding-top: 8px; }
   mark[data-hl] { background: transparent; text-decoration: underline; }
 }
 
+
+/* ─────────────── read aloud ─────────────── */
+
+/* The block being spoken. A left rule + a soft tint reads as "here" without
+   fighting the user's own <mark> highlights, which keep their colours. */
+.tts-now {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  /* The rule is drawn with box-shadow so no padding is needed: adding padding
+     would reflow the paragraph every time the marker moves to the next one. */
+  box-shadow: inset 3px 0 0 var(--accent);
+  border-radius: 0 6px 6px 0;
+  transition: background .25s ease;
+  scroll-margin-block: 30vh;
+}
+.chapter h1.tts-now, .chapter h2.tts-now, .chapter h3.tts-now { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+
+/* Reader-bar button: the speaker gets an accent tint while it is talking. */
+#btn-tts.on { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+#btn-tts .ico-waves { opacity: .55; }
+#btn-tts.on .ico-waves { opacity: 1; }
+
+/* Transport bar, directly under the reader header and above the text. */
+.tts-bar {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .35rem clamp(12px, 3vw, 28px);
+  background: color-mix(in srgb, var(--accent) 7%, var(--paper-2));
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  flex: none;
+}
+.tts-bar[hidden] { display: none; }
+.tts-bar .btn-icon { width: 38px; min-height: 38px; }
+.tts-main {
+  width: 42px;
+  min-height: 42px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.tts-main:hover { background: var(--accent); filter: brightness(1.07); }
+.tts-main svg { width: 20px; height: 20px; fill: currentColor; stroke: none; }
+.tts-main .ico-play { display: none; }
+.tts-bar.paused .tts-main .ico-pause { display: none; }
+.tts-bar.paused .tts-main .ico-play { display: block; }
+
+.tts-meter {
+  flex: 1;
+  min-width: 40px;
+  height: 4px;
+  margin: 0 .4rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+  overflow: hidden;
+}
+.tts-meter i {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width .3s ease;
+}
+.tts-pos {
+  font-variant-numeric: tabular-nums;
+  font-size: .72rem;
+  white-space: nowrap;
+}
+
+/* speech settings */
+.tts-voice { max-width: 12rem; }
+.tts-note {
+  margin: 0 0 .2rem;
+  padding: .5em .6em;
+  border-radius: 8px;
+  font-size: .74rem;
+  line-height: 1.45;
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 22%, transparent);
+}
+
+@media (max-width: 560px) {
+  .tts-bar { padding: .3rem 10px; gap: .2rem; }
+  .tts-bar .btn-icon { width: 34px; min-height: 34px; }
+  .tts-main { width: 40px; min-height: 40px; }
+  .tts-pos { display: none; }   /* the meter already says "how far" */
+}
+
 /* theme toggle icon: show the target theme (moon in light, sun in dark) */
 .btn-icon .ico-moon, .btn-icon .ico-sun { width: 18px; height: 18px; }
 [data-theme="dark"] .ico-moon { display: none; }

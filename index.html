@@ -141,11 +141,33 @@
     <button id="btn-full" class="btn btn-icon" type="button" aria-pressed="false" data-i18n-attr="aria-label:reader.full title:reader.full">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
     </button>
+    <button id="btn-tts" class="btn btn-icon" type="button" aria-pressed="false" data-i18n-attr="aria-label:reader.listen title:reader.listen">
+      <svg viewBox="0 0 24 24" aria-hidden="true" class="ico-speaker"><path d="M4 9.5h3.2L12 5.5v13L7.2 14.5H4Z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a8 8 0 0 1 0 11" class="ico-waves"/></svg>
+    </button>
     <button id="btn-aa" class="btn btn-icon" type="button" data-i18n-attr="aria-label:reader.settings" aria-expanded="false">Aa</button>
   </header>
 
   <div id="progress-track" class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100">
     <div id="progress-fill" class="progress-fill"></div>
+  </div>
+
+  <!-- Listening transport: appears only while read-aloud is active. -->
+  <div id="tts-bar" class="tts-bar" hidden>
+    <button id="tts-prev" class="btn btn-icon btn-sm" type="button" data-i18n-attr="aria-label:tts.prev">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6v12L9 12Z"/><path d="M6 6v12"/></svg>
+    </button>
+    <button id="tts-play" class="btn btn-icon tts-main" type="button" aria-pressed="false" data-i18n-attr="aria-label:tts.pause">
+      <svg viewBox="0 0 24 24" aria-hidden="true" class="ico-pause"><path d="M9 6v12M15 6v12"/></svg>
+      <svg viewBox="0 0 24 24" aria-hidden="true" class="ico-play"><path d="M8 5.5v13l10-6.5Z"/></svg>
+    </button>
+    <button id="tts-next" class="btn btn-icon btn-sm" type="button" data-i18n-attr="aria-label:tts.next">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6v12l9-6Z"/><path d="M18 6v12"/></svg>
+    </button>
+    <div class="tts-meter" aria-hidden="true"><i id="tts-fill"></i></div>
+    <span id="tts-pos" class="tts-pos muted"></span>
+    <button id="tts-close" class="btn btn-icon btn-sm" type="button" data-i18n-attr="aria-label:tts.stop">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
   </div>
 
   <div id="scroll-area" class="scroll-area">
@@ -224,6 +246,23 @@
           <option value="publisher" data-i18n="aa.font.publisher">跟隨書籍樣式</option>
         </select>
       </label>
+      <div class="aa-row aa-togglerow">
+        <span data-i18n="tts.title">朗讀</span>
+        <label class="aa-check">
+          <input type="checkbox" id="opt-tts">
+          <span data-i18n="tts.enable">開啟朗讀（點段落即由該處讀起）</span>
+        </label>
+      </div>
+      <label class="aa-row">
+        <span data-i18n="tts.rate">速度</span>
+        <input id="opt-tts-rate" type="range" min="0.6" max="1.8" step="0.1" value="1">
+        <output id="out-tts-rate">1.0×</output>
+      </label>
+      <label class="aa-row">
+        <span data-i18n="tts.voice">聲音</span>
+        <select id="opt-tts-voice" class="tts-voice"></select>
+      </label>
+      <p id="tts-note" class="muted tts-note" hidden></p>
       <label class="aa-row">
         <span data-i18n="aa.language">語言</span>
         <select id="opt-lang">
@@ -277,6 +316,7 @@
 <script src="js/txt.js"></script>
 <script src="js/highlight.js"></script>
 <script src="js/i18n.js"></script>
+<script src="js/tts.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

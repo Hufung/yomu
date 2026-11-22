@@ -18,6 +18,7 @@ A calm, local-first **EPUB reader that runs entirely in your browser**. Drop a b
 - **One-tap dark mode** — a sun/moon button in both the library header and the reader bar. It always lands on an explicit theme, so it never *looks* broken just because your OS already agreed with it. The full picker also offers paper, and **auto** (follows the OS live).
 - **Five UI languages — English, 繁體中文, 简体中文, 日本語, 한국어** — the app detects the browser language (including Simplified vs Traditional Chinese) and switches instantly from the settings drawer without reloading the open book. Generated labels follow too.
 - **Organise your library** — make named shelves, file a book onto multiple shelves, filter with shelf chips, drag books onto a shelf, and sort by recently read / added / title / author. Shelves live in IndexedDB, are included in JSON backups, and deleting a shelf never deletes its books.
+- **Read aloud** — a speaker button in the reader bar speaks the book with the browser's own speech engine. It reads **one paragraph at a time**, highlights the block being spoken, scrolls to keep it visible, and offers pause / resume / previous / next / stop plus a speed control and a voice picker. Turn the mode on in the settings drawer (or press `S`) and **tap any paragraph to start there**. The voice is chosen from the **book's language**, not the UI language — so a Chinese novel does not get read by an English voice. If the device has no voice for that language it says so instead of sitting there silently.
 - **Reading settings** — font size, line height, column width, serif / sans / publisher font, themes, and a **full-width** layout that uses the whole screen (two columns on a desktop).
 - **Fullscreen & immersive reading** — a native Fullscreen API button, and a Zen mode that hides the chrome so only the text is left. Tap the page, press `Z`, or `Esc` to get the toolbars back. On browsers without the Fullscreen API (iOS Safari) the button falls back to Zen instead of doing nothing.
 - **Fits the device** — the reader sizes itself from `dvh`/`dvw` with safe-area insets, so a collapsing mobile URL bar or a notch never cuts text off; the column re-fits on rotation and resize, and PDF pages repaint at the new width.
@@ -31,11 +32,36 @@ A calm, local-first **EPUB reader that runs entirely in your browser**. Drop a b
 | --- | --- |
 | `←` / `→`, `PgUp` / `PgDn` | previous / next chapter (or PDF page) |
 | `Z` | toggle Zen mode |
+| `S` | start / stop reading aloud |
 | `L` | cycle language (five supported locales) |
+| `Space` | pause / resume reading aloud |
 | `D` | toggle dark / light |
 | `F` | open reading settings |
 | `F11` | toggle fullscreen |
 | `Esc` | close popover → drawer → Zen → fullscreen → back to library, in that order |
+
+## Read aloud
+
+![Read aloud](docs/screenshots/20-listen.png)
+
+Voice, speed and the mode switch live in the same settings drawer:
+
+![Read-aloud settings](docs/screenshots/21-listen-settings.png)
+
+The transport appears under the reader header only while it is reading. The spoken paragraph gets a tinted background and a left rule — deliberately *not* a `<mark>`, so it never collides with your own highlights, and drawn with `box-shadow` so moving the marker never reflows the text.
+
+### How it avoids the usual speech bugs
+
+| Problem | What this does |
+| --- | --- |
+| One giant utterance gets truncated on Chrome, and makes highlighting impossible | A queue of **one utterance per block** (p / h1–h6 / li / blockquote / td …), built from the rendered chapter |
+| `cancel()` then `speak()` drops the new utterance | every utterance starts through a cancellable ~60 ms window, and `paused` is cleared first |
+| `onend` also fires when *you* cancel, so "Next" skips two paragraphs | a monotonic token marks superseded utterances; their `onend` is ignored |
+| Highlighting inside a paragraph cuts the sentence in two | inline content (`em`, `a`, `code`, `span`) is flattened into the same utterance; blocks are the unit |
+| Highlighted words vanish from the speech | `<mark>` is traversed, not skipped — a highlight wraps real text |
+| SVG/MathML alt-text gets read out | skipped (case-insensitively: `tagName` keeps its case for SVG) |
+| A device with no voice "reads" in silence | a watchdog notices the queue did not advance and reports it in your language |
+| `localStorage` voice URI no longer exists | the voice resolves lazily at speak time, then falls back by language |
 
 ## Screenshots
 
@@ -131,6 +157,7 @@ The shelf bar is deliberately built so it cannot break as shelves accumulate: th
 - **HUFF/CDIC-compressed MOBI is not supported** — that format needs a dictionary table this reader does not implement. Convert with Calibre to EPUB or AZW3.
 - **Browser storage can be evicted.** The app requests persistent storage, but a browser under pressure (or a "clear site data") can still discard books — export a backup if the notes matter.
 - **Very large books are held in memory while open.** A 95 MB EPUB or a 96 MB MOBI opens in a couple of seconds here, but a 500 MB one will hurt.
+- **Read-aloud uses the browser's speech engine**, so it needs a voice installed for the book's language. Headless Chromium (and therefore the automated suite) has none — the suite installs a deterministic fake engine and asserts the exact utterances, but **audible output is the one thing these tests cannot prove**.
 - **Five UI languages are included** (English, Traditional Chinese, Simplified Chinese, Japanese, Korean). The string tables are in `js/i18n.js`; missing translations fall back to English.
 
 ## Built with
@@ -142,7 +169,7 @@ Vanilla JavaScript, no framework, no bundler.
 - [@lingo-reader/mobi-parser](js/vendor/mobi/LICENSE-lingo-mobi) (MIT) — KF8/AZW3 only; MOBI 7 has a hand-written reader in `js/mobi7.js`
 - [sax](js/vendor/mobi/LICENSE-sax), [events](js/vendor/mobi/LICENSE-events), [path-browserify](js/vendor/mobi/LICENSE-path-browserify) — dependencies of the KF8 parser
 
-Testing was done with real Chromium over the DevTools protocol: EPUB lifecycle (39), format coverage, viewport/theme/fullscreen, five-locale switching, and a shelf suite covering the IndexedDB v1→v2 migration, sorting, drag/drop, backup, rename/delete. Run all suites with `../yomu-test/runall.sh`.
+Testing was done with real Chromium over the DevTools protocol: **368 assertions across seven suites** — EPUB lifecycle, format coverage, viewport/theme/fullscreen, five-locale switching, library-chrome layout at 13 widths, read-aloud (against a fake speech engine, so exact utterances and voice choice are asserted), and shelves (IndexedDB v1→v2 migration, sorting, drag/drop, backup, rename/delete). Run all suites with `../yomu-test/runall.sh`.
 
 ## License
 

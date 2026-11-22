@@ -8,6 +8,7 @@
   const Store = window.YomuStore;
   const Epub = window.YomuEpub;
   const HL = window.YomuHL;
+  const TTS = window.YomuTTS;
 
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
@@ -16,6 +17,9 @@
   const DEFAULTS = {
     theme: 'auto', size: 100, leading: 170, width: 700, font: 'serif',
     fullBleed: false, lang: 'auto', zen: false, sort: 'recent',
+    // Read-aloud. `ttsOn` is the mode switch; the rest persist the user's
+    // speed/voice so listening does not have to be reconfigured per book.
+    ttsOn: false, ttsRate: 1, ttsVoice: '',
   };
 
   const I18N = window.YomuI18n;
@@ -182,6 +186,11 @@
     const ol = $('#out-leading'); if (ol) ol.textContent = (p.leading / 100).toFixed(1);
     const ow = $('#out-width'); if (ow) ow.textContent = String(p.width);
     const of = $('#opt-font'); if (of) of.value = p.font;
+    const ot = $('#opt-tts'); if (ot) ot.checked = !!p.ttsOn;
+    const orr = $('#opt-tts-rate');
+    if (orr) { orr.value = p.ttsRate; }
+    const ort = $('#out-tts-rate');
+    if (ort) ort.textContent = (Number(p.ttsRate) || 1).toFixed(1) + '×';
     const fb = $('#opt-fullbleed'); if (fb) fb.checked = !!p.fullBleed;
     const lg = $('#opt-lang');
     if (lg) {
@@ -1042,6 +1051,7 @@
   }
 
   function closeReader() {
+    if (TTS.playing) ttsStop();
     const scroller = $('#scroll-area');
     if (state.book) saveProgress(true);
     state.book = null;
@@ -1058,8 +1068,149 @@
     refreshLibrary();
   }
 
+
+  /* ─────────────────────────── read aloud ─────────────────────────── */
+
+  /* The book's own language decides the voice. It is the only honest source:
+   * the UI language says nothing about the text being read. */
+  function bookLang() {
+    const raw = (state.book && state.book.language) || (state.epub && state.epub.language) || '';
+    const l = String(raw).trim().toLowerCase().replace('_', '-');
+    if (!l) return '';
+    // dc:language is often "zh" or "zho"; normalise the three-letter codes the
+    // metadata actually uses so voice matching has something to match.
+    const map = { zho: 'zh', chi: 'zh', eng: 'en', jpn: 'ja', kor: 'ko', cmn: 'zh' };
+    const base = map[l] || l;
+    // A bare "zh" says nothing about script; lean on the UI locale for that,
+    // because a Cantonese reader wants zh-HK and will have it installed.
+    if (base === 'zh') return I18N.get() === 'zh-Hans' ? 'zh-CN' : (I18N.get() === 'en' ? 'zh' : 'zh-HK');
+    return base;
+  }
+
+  function ttsVoiceOptions() {
+    const sel = $('#opt-tts-voice');
+    if (!sel) return;
+    const lang = bookLang();
+    const list = TTS.voices();
+    sel.innerHTML = '';
+    const auto = document.createElement('option');
+    auto.value = '';
+    const autoVoice = TTS.pickVoice(lang, state.prefs.ttsVoice);
+    auto.textContent = autoVoice
+      ? t('tts.auto') + ' — ' + autoVoice.name
+      : t('tts.auto');
+    sel.appendChild(auto);
+
+    // Show the book's language first, then everything else: a device can carry
+    // dozens of voices and the relevant ones are what you want at the top.
+    const base = String(lang).toLowerCase().split('-')[0];
+    const matching = list.filter((v) => String(v.lang || '').toLowerCase().startsWith(base));
+    const others = list.filter((v) => !matching.includes(v));
+    for (const v of matching.concat(others)) {
+      const o = document.createElement('option');
+      o.value = v.voiceURI;
+      o.textContent = v.name + ' · ' + v.lang;
+      sel.appendChild(o);
+    }
+    sel.value = state.prefs.ttsVoice || '';
+
+    // Honest note when the device cannot read this book at all.
+    const note = $('#tts-note');
+    if (note) {
+      const has = TTS.canSpeak(lang);
+      const zh = String(lang).startsWith('zh');
+      const anyZh = TTS.voices().some((v) => String(v.lang || '').toLowerCase().startsWith('zh'));
+      if (!TTS.supported) { note.textContent = t('tts.unsupported'); note.hidden = false; }
+      else if (zh && !anyZh) { note.textContent = t('tts.nozh'); note.hidden = false; }
+      else if (!has) { note.textContent = t('tts.novoice', { lang }); note.hidden = false; }
+      else { note.hidden = true; note.textContent = ''; }
+    }
+  }
+
+  function ttsSyncUi() {
+    const btn = $('#btn-tts');
+    const bar = $('#tts-bar');
+    const playing = TTS.playing;
+    const paused = TTS.paused;
+    if (btn) {
+      btn.setAttribute('aria-pressed', String(playing && !paused));
+      btn.classList.toggle('on', playing);
+    }
+    if (bar) {
+      bar.hidden = !playing;
+      bar.classList.toggle('paused', paused);
+    }
+    const play = $('#tts-play');
+    if (play) {
+      play.setAttribute('aria-pressed', String(paused));
+      play.setAttribute('aria-label', paused ? t('tts.play') : t('tts.pause'));
+    }
+    const fill = $('#tts-fill');
+    if (fill) {
+      const total = TTS.total || 1;
+      fill.style.width = (playing ? Math.round(((TTS.index + 1) / total) * 100) : 0) + '%';
+    }
+    const pos = $('#tts-pos');
+    if (pos) pos.textContent = playing ? t('tts.pos', { i: TTS.index + 1, n: TTS.total }) : '';
+  }
+
+  /* Start listening from a block element (a tapped paragraph) or the top. */
+  function ttsStart(fromEl) {
+    if (!TTS.supported) { toast(t('tts.unsupported'), 'err', 4000); return; }
+    state.prefs.ttsOn = true;
+    savePrefs();
+    const ok = TTS.start($('#chapter'), {
+      fromEl: fromEl || null,
+      rate: state.prefs.ttsRate,
+      voiceURI: state.prefs.ttsVoice,
+      lang: bookLang(),
+    });
+    if (!ok) { toast(t('tts.empty'), 'err', 3000); }
+    ttsSyncUi();
+  }
+
+  function ttsStop() {
+    TTS.stop();
+    ttsSyncUi();
+  }
+
+  /* The mode switch in the settings drawer is also the on/off for tap-to-read:
+   * with it on, a tap on a paragraph starts there; with it off the reader
+   * behaves as before. */
+  function ensureTtsWired() {
+    if (state.ttsWired) return;
+    state.ttsWired = true;
+
+    TTS.on('change', () => {
+      ttsSyncUi();
+      // Voices arrive asynchronously; refresh the picker when they do.
+      ttsVoiceOptions();
+    });
+    TTS.on('fail', (kind) => {
+      ttsSyncUi();
+      if (kind === 'unsupported') toast(t('tts.unsupported'), 'err', 4000);
+      else if (kind === 'empty') toast(t('tts.empty'), 'err', 3000);
+      else if (kind === 'silent') {
+        // Nothing came out. Say the useful thing: which language has no voice.
+        const lang = bookLang();
+        const why = TTS.voices().length
+          ? t('tts.novoice', { lang })
+          : (String(lang).startsWith('zh') ? t('tts.nozh') : t('tts.unsupported'));
+        toast(why, 'err', 6500);
+      }
+      else if (kind && kind !== 'interrupted') {
+        // 'not-allowed' is the browser refusing speech — usually a policy, and
+        // the user needs to know rather than wonder why nothing happened.
+        toast(t('tts.unsupported') + ' (' + kind + ')', 'err', 4000);
+      }
+    });
+  }
+
   async function renderChapter(index, anchor) {
     if (!state.epub) return;
+    // The speech queue references the old chapter's DOM; speaking on after a
+    // jump would read a paragraph that is no longer on screen.
+    if (TTS.playing) ttsStop();
     const total = state.epub.chapters.length;
     index = Math.max(0, Math.min(index, total - 1));
     state.chapter = index;
@@ -1777,6 +1928,37 @@
     document.addEventListener('fullscreenchange', syncFullscreenUi);
     document.addEventListener('webkitfullscreenchange', syncFullscreenUi);
 
+    // read aloud
+    ensureTtsWired();
+    ttsVoiceOptions();
+    $('#btn-tts').addEventListener('click', () => {
+      if (TTS.playing) ttsStop();
+      else ttsStart(null);
+    });
+    $('#tts-play').addEventListener('click', () => { TTS.toggle(); ttsSyncUi(); });
+    $('#tts-prev').addEventListener('click', () => { TTS.prev(); ttsSyncUi(); });
+    $('#tts-next').addEventListener('click', () => { TTS.next(); ttsSyncUi(); });
+    $('#tts-close').addEventListener('click', () => ttsStop());
+    $('#opt-tts').addEventListener('change', (e) => {
+      state.prefs.ttsOn = e.target.checked;
+      savePrefs();
+      if (!state.prefs.ttsOn) { ttsStop(); return; }
+      // Turning it on with a book open reads from the top: the mode is not a
+      // hidden preference, it has to demonstrably do something.
+      closeDrawers();
+      ttsStart(null);
+    });
+    $('#opt-tts-rate').addEventListener('input', (e) => {
+      state.prefs.ttsRate = TTS.setRate(e.target.value);
+      $('#out-tts-rate').textContent = Number(state.prefs.ttsRate).toFixed(1) + '×';
+      savePrefs();
+    });
+    $('#opt-tts-voice').addEventListener('change', (e) => {
+      state.prefs.ttsVoice = e.target.value;
+      TTS.setVoice(e.target.value);
+      savePrefs();
+    });
+
     // language
     $('#opt-lang').addEventListener('change', (e) => setLanguage(e.target.value));
 
@@ -1801,9 +1983,28 @@
         if (k === 'z') { setZen(!document.body.classList.contains('zen')); }
         if (k === 'd') { toggleTheme(); }
         if (k === 'l') { cycleLanguage(); }
+        if (k === 's') { if (TTS.playing) ttsStop(); else ttsStart(null); }
+        if (e.key === ' ' && TTS.playing) { e.preventDefault(); TTS.toggle(); ttsSyncUi(); }
         if (k === 'F11' || e.key === 'F11') { e.preventDefault(); toggleFullscreen(); }
       }
     });
+
+    /* Tap-to-read: with the mode on, a tap on a paragraph reads FROM it. This
+     * is the whole interaction model — no "start" button needed once enabled.
+     * Links and existing highlights keep their own behaviour. */
+    $('#chapter').addEventListener('click', (e) => {
+      if (!state.prefs.ttsOn || !TTS.supported) return;
+      if (e.target.closest('a[data-yomu-chapter], mark[data-hl-id]')) return;
+      if (!window.getSelection().isCollapsed) return;   // a selection is not a tap
+      const block = e.target.closest('p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, td, th, figcaption, dd, dt');
+      if (!block) return;
+      if (TTS.playing) {
+        const i = TTS.indexOfEl(block);
+        if (i >= 0) { TTS.jumpTo(i); ttsSyncUi(); }
+      } else {
+        ttsStart(block);
+      }
+    }, true);   // capture: run before the zen-tap handler below
 
     // zen mode: a tap on the text (not on a link or a mark) toggles the chrome
     $('#chapter').addEventListener('click', (e) => {
