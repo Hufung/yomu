@@ -855,3 +855,8 @@ body.is-fullscreen .reader-bar { padding-top: 8px; }
   body { background: #fff; color: #000; }
   mark[data-hl] { background: transparent; text-decoration: underline; }
 }
+
+/* theme toggle icon: show the target theme (moon in light, sun in dark) */
+.btn-icon .ico-moon, .btn-icon .ico-sun { width: 18px; height: 18px; }
+[data-theme="dark"] .ico-moon { display: none; }
+html:not([data-theme="dark"]) .ico-sun { display: none; }

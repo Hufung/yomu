@@ -15,8 +15,11 @@
   const PREFS_KEY = 'yomu.prefs.v1';
   const DEFAULTS = {
     theme: 'auto', size: 100, leading: 170, width: 700, font: 'serif',
-    fullBleed: false,
+    fullBleed: false, lang: 'auto', zen: false,
   };
+
+  const I18N = window.YomuI18n;
+  const t = (key, vars) => I18N.t(key, vars);
 
   const state = {
     books: [],
@@ -69,7 +72,44 @@
       const raw = localStorage.getItem(PREFS_KEY);
       if (raw) state.prefs = { ...DEFAULTS, ...JSON.parse(raw) };
     } catch (_) { /* corrupt prefs are not worth a dialog */ }
+    // Language first: everything applied after this point is already translated.
+    I18N.set(state.prefs.lang === 'auto' ? I18N.detect() : state.prefs.lang);
+    I18N.applyI18n();
     applyPrefs();
+  }
+
+  /* Switching language rewrites the chrome in place — no reload, so the book
+   * and the reading position stay exactly where they were. */
+  function setLanguage(value) {
+    state.prefs.lang = value;
+    I18N.set(value === 'auto' ? I18N.detect() : value);
+    I18N.applyI18n();
+    savePrefs();
+    applyPrefs();
+    // Generated labels (Section 12 / Page 3) live in the parsed book, so the
+    // current chapter and the TOC have to be re-rendered with the new locale.
+    if (state.epub) {
+      renderToc();
+      if (state.chapter >= 0) {
+        const ch = state.epub.renderChapter(state.chapter);
+        $('#rd-chapter').textContent = ch.title || (ch.titleKind === 'page'
+          ? t('reader.page', { n: state.chapter + 1 })
+          : t('reader.section', { n: state.chapter + 1 }));
+      }
+      renderNotes();
+    }
+    renderShelf();
+    renderContinue();
+    // The storage note is built from a template too; without this it keeps the
+    // previous language until the next import.
+    updateStorageNote();
+    toast(t('toast.langchanged'), 'ok', 1400);
+  }
+
+  /* Cycle zh-Hant → en → zh-Hant for the menu item. */
+  function cycleLanguage() {
+    const next = I18N.get() === 'en' ? 'zh-Hant' : 'en';
+    setLanguage(next);
   }
 
   function savePrefs() {
@@ -86,6 +126,21 @@
     return p;
   }
 
+  /* One-tap dark toggle. It always lands on an explicit theme (never 'auto'),
+   * because a button that appears to do nothing — because the OS already said
+   * dark — is worse than no button. */
+  async function toggleTheme() {
+    const next = resolvedTheme() === 'dark' ? 'light' : 'dark';
+    state.prefs.theme = next;
+    applyPrefs();
+    savePrefs();
+    // The browser can theme its own chrome on Android; ask it to match.
+    if (navigator.setAppBadge === undefined && document.body) { /* noop guard */ }
+    const bt = $('#btn-theme');
+    if (bt) bt.setAttribute('aria-pressed', String(next === 'dark'));
+    return next;
+  }
+
   function applyPrefs() {
     const p = state.prefs;
     const root = document.documentElement;
@@ -98,6 +153,13 @@
       p.font === 'sans' ? 'var(--sans)' : p.font === 'serif' ? 'var(--serif)' : 'inherit');
     root.classList.toggle('full-bleed', !!p.fullBleed);
 
+    // Theme icon: show the theme you would switch TO.
+    const bt = $('#btn-theme');
+    if (bt) {
+      bt.setAttribute('aria-pressed', String(theme === 'dark'));
+      bt.dataset.current = theme;
+    }
+
     // Sync the controls that exist in the DOM.
     const map = [
       ['#opt-size', p.size], ['#opt-leading', p.leading], ['#opt-width', p.width],
@@ -108,6 +170,7 @@
     const ow = $('#out-width'); if (ow) ow.textContent = String(p.width);
     const of = $('#opt-font'); if (of) of.value = p.font;
     const fb = $('#opt-fullbleed'); if (fb) fb.checked = !!p.fullBleed;
+    const lg = $('#opt-lang'); if (lg) lg.value = p.lang === 'auto' ? 'auto' : I18N.get();
     $$('#drawer-aa .seg button').forEach((b) => b.classList.toggle('on', b.dataset.theme === p.theme));
 
     const meta = document.querySelector('meta[name="theme-color"]');
@@ -164,7 +227,7 @@
       cover.className = 'card-cover';
       cover.tabIndex = 0;
       cover.setAttribute('role', 'button');
-      cover.setAttribute('aria-label', '開啟 ' + b.title);
+      cover.setAttribute('aria-label', t('continue.open') + ' ' + b.title);
 
       const url = coverUrlFor(b);
       if (url) {
@@ -195,8 +258,8 @@
       const del = document.createElement('button');
       del.className = 'card-del';
       del.type = 'button';
-      del.title = '刪除這本書';
-      del.setAttribute('aria-label', '刪除 ' + b.title);
+      del.title = t('hl.delete') + ' ' + b.title;
+      del.setAttribute('aria-label', t('hl.delete') + ' ' + b.title);
       del.textContent = '✕';
       del.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -206,13 +269,14 @@
 
       const meta = document.createElement('div');
       meta.className = 'card-meta';
-      const t = document.createElement('p');
-      t.className = 'card-title';
-      t.textContent = b.title || 'Untitled';
-      const a = document.createElement('span');
-      a.className = 'card-author';
-      a.textContent = b.author || '—';
-      meta.append(t, a);
+      // NB: do not name these `t` — that shadows the t() translator in scope.
+      const titleEl = document.createElement('p');
+      titleEl.className = 'card-title';
+      titleEl.textContent = b.title || 'Untitled';
+      const authorEl = document.createElement('span');
+      authorEl.className = 'card-author';
+      authorEl.textContent = b.author || '—';
+      meta.append(titleEl, authorEl);
 
       // Format badge: a PDF on the shelf should not pretend to be an EPUB.
       const fmt = (b.format || 'epub').toUpperCase().replace('MARKDOWN', 'MD');
@@ -235,7 +299,7 @@
       const p = document.createElement('p');
       p.className = 'muted';
       p.style.gridColumn = '1 / -1';
-      p.textContent = `沒有符合「${q}」的書。`;
+      p.textContent = t('empty.nomatch', { q });
       shelf.appendChild(p);
     }
   }
@@ -268,20 +332,20 @@
       const mb = (used / 1048576).toFixed(1);
       let persist = false;
       if (navigator.storage.persisted) persist = await navigator.storage.persisted();
-      note.textContent = `本機已用 ${mb} MB` + (persist ? ' · 已受保護' : '');
+      note.textContent = t('storage.used', { mb }) + (persist ? t('storage.persisted') : '');
     } catch (_) { note.textContent = ''; }
   }
 
   async function confirmDelete(book) {
     const n = (await Store.listHighlights(book.id)).length;
-    const msg = `刪除《${book.title}》？` + (n ? `\n這會一併刪除它的 ${n} 條劃線／筆記。` : '');
+    const msg = n ? t('toast.deleteconfirmnotes', { title: book.title, n }) : t('toast.deleteconfirm', { title: book.title });
     if (!window.confirm(msg)) return;
     await Store.deleteBook(book.id);
     const u = coverUrls.get(book.id);
     if (u) { URL.revokeObjectURL(u); coverUrls.delete(book.id); }
     if (state.book && state.book.id === book.id) closeReader();
     await refreshLibrary();
-    toast('已刪除', 'ok');
+    toast(t('toast.deleted'), 'ok');
   }
 
   /* ─────────────────────────── import ─────────────────────────── */
@@ -335,7 +399,7 @@
       const s = document.createElement('script');
       s.src = src;
       s.onload = () => { loaded.add(src); resolve(); };
-      s.onerror = () => reject(new Error('無法載入 ' + src));
+      s.onerror = () => reject(new Error(t('toast.openfail', { msg: src })));
       document.head.appendChild(s);
     });
   }
@@ -344,7 +408,7 @@
     const files = Array.from(fileList || []).map((f) => ({ file: f, format: formatOf(f) }))
       .filter((x) => x.format);
     if (!files.length) {
-      toast('請選擇 EPUB、MOBI／AZW3、PDF 或 TXT 檔案', 'err');
+      toast(t('toast.pickformat'), 'err');
       return;
     }
     // Ask for durable storage up front — browsers may otherwise evict the books.
@@ -353,7 +417,7 @@
     }
 
     for (const { file, format } of files) {
-      toast(`正在匯入「${file.name}」…`, null, 60000);
+      toast(t('toast.importing', { name: file.name }), null, 60000);
       let book = null;
       try {
         const buf = await file.arrayBuffer();
@@ -391,10 +455,10 @@
         // Free the temporary blob URLs held by this parse (urlCache is a Map).
         if (book.urlCache) for (const u of book.urlCache.values()) URL.revokeObjectURL(u);
         if (book.destroy) book.destroy();
-        toast(`已加入「${entry.title}」`, 'ok');
+        toast(t('toast.imported', { title: entry.title }), 'ok');
       } catch (err) {
         console.error(err);
-        toast(`「${file.name}」匯入失敗：${err.message || err}`, 'err', 6000);
+        toast(t('toast.importfail', { name: file.name, msg: err.message || err }), 'err', 6000);
       }
     }
     await refreshLibrary();
@@ -436,17 +500,17 @@
 
   async function openBook(id) {
     const meta = await Store.getBook(id);
-    if (!meta) { toast('找不到這本書', 'err'); return; }
+    if (!meta) { toast(t('toast.notfound'), 'err'); return; }
     const buf = await Store.getFile(id);
     if (!buf) {
-      toast('這本書的檔案不見了（可能已從瀏覽器清除）。請重新匯入。', 'err', 7000);
+      toast(t('toast.missingfile'), 'err', 7000);
       return;
     }
-    toast('正在開啟…', null, 8000);
+    toast(t('toast.opening'), null, 8000);
     try {
       state.epub = await openAny(meta.format || 'epub', buf, meta.title || '');
     } catch (e) {
-      toast('無法開啟：' + (e.message || e), 'err', 7000);
+      toast(t('toast.openfail', { msg: e.message || e }), 'err', 7000);
       return;
     }
     state.book = meta;
@@ -496,7 +560,9 @@
     // Update the chrome BEFORE the (possibly async) page paint: a PDF takes a
     // few hundred ms to draw, and leaving the old chapter's label on screen
     // during that window looks like the navigation failed.
-    $('#rd-chapter').textContent = ch.title || `第 ${index + 1} 節`;
+    $('#rd-chapter').textContent = ch.title || (ch.titleKind === 'page'
+      ? t('reader.page', { n: index + 1 })
+      : t('reader.section', { n: index + 1 }));
     $('#chapter-pos').textContent = `${index + 1} / ${total}`;
     $('#btn-prev').disabled = index === 0;
     $('#btn-next').disabled = index === total - 1;
@@ -614,8 +680,8 @@
     } catch (e) {
       state.dirty = true;
       const msg = e && e.name === 'QuotaExceededError'
-        ? '瀏覽器儲存空間已滿，閱讀進度未能儲存。'
-        : '閱讀進度儲存失敗：' + (e && e.message ? e.message : e);
+        ? t('toast.quota')
+        : t('toast.savefail', { msg: e && e.message ? e.message : e });
       toast(msg, 'err', 5000);
       if (!immediate) scheduleSave(); // retry
     }
@@ -638,7 +704,7 @@
       // iOS Safari has no Fullscreen API on iPhone. Fall back to immersive mode
       // rather than a dead button: the reading column expands to the same area.
       setZen(true);
-      toast('這個瀏覽器不支援全螢幕，已切換為沉浸模式', null, 3200);
+      toast(t('toast.fullscreenfallback'), null, 3200);
       return;
     }
     try {
@@ -652,7 +718,7 @@
     } catch (e) {
       // A rejected request (permissions policy, iframe, user gesture lost) must
       // not leave the icon lying about being fullscreen.
-      toast('無法進入全螢幕：' + (e.message || e), 'err', 4000);
+      toast(t('toast.fullscreenfail', { msg: e.message || e }), 'err', 4000);
     }
     syncFullscreenUi();
   }
@@ -711,7 +777,7 @@
         .filter((e) => e.chapter !== undefined);
     } else {
       entries = book.chapters.map((c, i) => ({
-        label: c.title || `第 ${i + 1} 節`,
+        label: c.title || t(c.titleKind === 'page' ? 'reader.page' : 'reader.section', { n: i + 1 }),
         chapter: i,
         anchor: null,
       }));
@@ -743,7 +809,7 @@
       const p = document.createElement('p');
       p.className = 'muted';
       p.style.padding = '.8rem';
-      p.textContent = '選取一段文字，就能劃線或寫筆記。';
+      p.textContent = t('notes.empty');
       list.appendChild(p);
       return;
     }
@@ -760,10 +826,10 @@
       where.innerHTML = `<span>${escapeHtml(h.chapterTitle || '')}</span><span>${escapeHtml(fmtDate(h.createdAt))}</span>`;
       item.append(quote, where);
       if (h.note) {
-        const t = document.createElement('div');
-        t.className = 'note-text';
-        t.textContent = h.note;
-        item.appendChild(t);
+        const noteEl = document.createElement('div');
+        noteEl.className = 'note-text';
+        noteEl.textContent = h.note;
+        item.appendChild(noteEl);
       }
       item.addEventListener('click', async () => {
         closeDrawers();
@@ -775,7 +841,7 @@
           showHlPop(h, mark);
           setTimeout(() => mark.classList.remove('is-active'), 2200);
         } else {
-          toast('這條劃線目前的章節文字對不上，已保留原始紀錄。', 'err', 4000);
+          toast(t('toast.hlanchor'), 'err', 4000);
         }
       });
       list.appendChild(item);
@@ -854,7 +920,7 @@
     try {
       await Store.putHighlight(hl);
     } catch (e) {
-      toast('劃線儲存失敗：' + (e.message || e), 'err', 5000);
+      toast(t('toast.hlsavefail', { msg: e.message || e }), 'err', 5000);
       return;
     }
     state.highlights.push(hl);
@@ -863,7 +929,7 @@
     hideSelBar();
     window.getSelection().removeAllRanges();
     renderNotes();
-    toast('已劃線', 'ok', 1200);
+    toast(t('toast.hlcreated'), 'ok', 1200);
   }
 
   function showHlPop(hl, markEl) {
@@ -898,9 +964,9 @@
     hl.updatedAt = Date.now();
     try {
       await Store.putHighlight(hl);
-      toast('筆記已儲存', 'ok', 1400);
+      toast(t('toast.notesaved'), 'ok', 1400);
     } catch (e) {
-      toast('筆記儲存失敗：' + (e.message || e), 'err', 5000);
+      toast(t('toast.notesavefail', { msg: e.message || e }), 'err', 5000);
       return;
     }
     hideHlPop();
@@ -911,18 +977,18 @@
   async function deleteHl() {
     const id = $('#hl-pop').dataset.hlId;
     if (!id) return;
-    if (!window.confirm('刪除這條劃線？')) return;
+    if (!window.confirm(t('toast.hldeleteconfirm'))) return;
     try {
       await Store.deleteHighlight(id);
     } catch (e) {
-      toast('刪除失敗：' + (e.message || e), 'err', 5000);
+      toast(t('toast.hldeletefail', { msg: e.message || e }), 'err', 5000);
       return;
     }
     state.highlights = state.highlights.filter((h) => h.id !== id);
     hideHlPop();
     await renderChapter(state.chapter, null);
     renderNotes();
-    toast('已刪除', 'ok', 1300);
+    toast(t('toast.deleted'), 'ok', 1300);
   }
 
   /* ─────────────────────────── drawers ─────────────────────────── */
@@ -960,7 +1026,7 @@
     a.download = `yomu-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    toast(`已匯出 ${data.highlights.length} 條劃線（不含書籍檔案）`, 'ok', 4000);
+    toast(t('toast.exported', { n: data.highlights.length }), 'ok', 4000);
   }
 
   function restoreBackup() {
@@ -972,12 +1038,12 @@
       if (!file) return;
       try {
         const payload = JSON.parse(await file.text());
-        if (payload.app !== 'yomu') throw new Error('不是 Yomu 的備份檔');
+        if (payload.app !== 'yomu') throw new Error(t('toast.notbackup'));
         await Store.importData(payload);
         await refreshLibrary();
-        toast(`已還原 ${payload.highlights ? payload.highlights.length : 0} 條劃線`, 'ok', 4000);
+        toast(t('toast.restored', { n: payload.highlights ? payload.highlights.length : 0 }), 'ok', 4000);
       } catch (e) {
-        toast('還原失敗：' + (e.message || e), 'err', 6000);
+        toast(t('toast.restorefail', { msg: e.message || e }), 'err', 6000);
       }
     });
     input.click();
@@ -985,7 +1051,7 @@
 
   async function showAllNotes() {
     const rows = await Store.allHighlights();
-    if (!rows.length) { toast('還沒有任何劃線'); return; }
+    if (!rows.length) { toast(t('toast.nonotes')); return; }
     const byBook = new Map(state.books.map((b) => [b.id, b]));
     const text = rows
       .sort((a, b) => a.bookId.localeCompare(b.bookId) || a.start - b.start)
@@ -999,7 +1065,7 @@
     a.download = 'yomu-notes.md';
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    toast(`已匯出 ${rows.length} 條筆記為 Markdown`, 'ok', 3500);
+    toast(t('toast.notesmd', { n: rows.length }), 'ok', 3500);
   }
 
   /* ─────────────────────────── wiring ─────────────────────────── */
@@ -1007,6 +1073,9 @@
   function wire() {
     // library
     $('#btn-import').addEventListener('click', () => $('#file-input').click());
+    // The library header gets its own theme toggle so dark mode is reachable
+    // without opening a book.
+    $('#btn-theme-lib').addEventListener('click', toggleTheme);
     $('#file-input').addEventListener('change', (e) => {
       importFiles(e.target.files);
       e.target.value = '';
@@ -1029,7 +1098,9 @@
       if (what === 'backup') exportBackup();
       if (what === 'restore') restoreBackup();
       if (what === 'allnotes') showAllNotes();
-      if (what === 'storage') updateStorageNote().then(() => toast($('#storage-note').textContent || '未知'));
+      if (what === 'storage') updateStorageNote().then(() => toast($('#storage-note').textContent || t('toast.unknown')));
+      if (what === 'lang') cycleLanguage();
+      if (what === 'theme') toggleTheme();
     });
     document.addEventListener('click', (e) => {
       if (!e.target.closest('.lib-actions')) $('#menu').hidden = true;
@@ -1115,8 +1186,8 @@
     $('#sel-copy').addEventListener('pointerdown', (e) => e.preventDefault());
     $('#sel-copy').addEventListener('click', async () => {
       if (!pendingSel) return;
-      try { await navigator.clipboard.writeText(pendingSel.text); toast('已複製', 'ok', 1200); }
-      catch (_) { toast('複製失敗', 'err'); }
+      try { await navigator.clipboard.writeText(pendingSel.text); toast(t('toast.copied'), 'ok', 1200); }
+      catch (_) { toast(t('toast.copyfail'), 'err'); }
       hideSelBar();
     });
 
@@ -1160,8 +1231,12 @@
     // fullscreen + zen (immersive) reading
     $('#btn-full').addEventListener('click', toggleFullscreen);
     $('#btn-zen').addEventListener('click', () => setZen(!document.body.classList.contains('zen')));
+    $('#btn-theme').addEventListener('click', toggleTheme);
     document.addEventListener('fullscreenchange', syncFullscreenUi);
     document.addEventListener('webkitfullscreenchange', syncFullscreenUi);
+
+    // language
+    $('#opt-lang').addEventListener('change', (e) => setLanguage(e.target.value));
 
     // keyboard
     document.addEventListener('keydown', (e) => {
@@ -1182,7 +1257,8 @@
         const k = e.key.toLowerCase();
         if (k === 'f') { $('#btn-aa').click(); }
         if (k === 'z') { setZen(!document.body.classList.contains('zen')); }
-        if (k === 'd') { state.prefs.theme = resolvedTheme() === 'dark' ? 'light' : 'dark'; applyPrefs(); savePrefs(); }
+        if (k === 'd') { toggleTheme(); }
+        if (k === 'l') { cycleLanguage(); }
         if (k === 'F11' || e.key === 'F11') { e.preventDefault(); toggleFullscreen(); }
       }
     });
@@ -1240,7 +1316,7 @@
     try {
       await refreshLibrary();
     } catch (e) {
-      toast('書架讀取失敗：' + (e.message || e), 'err', 6000);
+      toast(t('toast.libfail', { msg: e.message || e }), 'err', 6000);
     }
   }
 

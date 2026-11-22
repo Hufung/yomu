@@ -160,7 +160,8 @@
       index: i,
       path: `txt:${i}`,
       href: String(i),
-      title: `第 ${i + 1} 節`,
+      title: (window.YomuI18n ? window.YomuI18n.t('reader.section', { n: i + 1 }) : 'Section ' + (i + 1)),
+      titleKind: 'section',   // generated, so it can be re-localised on a language switch
       html: cs.join('\n'),
     }));
 
@@ -176,7 +177,7 @@
       renderChapter(index) {
         const ch = chapters[index];
         if (!ch) return { html: '', css: '', title: '', path: '' };
-        return { html: ch.html, css: '', title: ch.title, path: ch.path };
+        return { html: ch.html, css: '', title: ch.title, path: ch.path, titleKind: ch.titleKind };
       },
       destroy() {},
     };

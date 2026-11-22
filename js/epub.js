@@ -369,12 +369,25 @@
       const css = scopeCss(styles.join('\n'));
 
       // Best-effort heading for the TOC when the book has none.
-      let title = ch.title;
+      const bookTitle = ch.title;
+      let title = bookTitle;
+      let titleKind = null;
       if (!title) {
         const h = /<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/i.exec(html);
         title = h ? h[1].replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim() : '';
       }
-      return { html, css, title: title || `Section ${index + 1}`, path: ch.path };
+      if (!title) {
+        // No heading at all: the app localises this itself, so leave a marker
+        // rather than baking an English "Section 12" into the data.
+        title = '';
+        titleKind = 'section';
+      }
+      return {
+        html, css,
+        title,
+        titleKind,
+        path: ch.path,
+      };
     }
 
     _inlineCss(css, baseDir) {

@@ -7,7 +7,7 @@
  * pdf.js and its CMaps/fonts (~2.5 MB) are deliberately NOT precached: most
  * users never open a PDF. They are cached on first use by the runtime rule.
  */
-const VERSION = 'yomu-v4';
+const VERSION = 'yomu-v5';
 const SHELL = [
   './',
   'index.html',
@@ -22,6 +22,7 @@ const SHELL = [
   'js/mobi.js',
   'js/pdf.js',
   'js/highlight.js',
+  'js/i18n.js',
   'js/app.js',
   'js/vendor/mobi/lingo-mobi.mjs',
   'js/vendor/mobi/lingo-shared.mjs',

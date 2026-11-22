@@ -113,19 +113,19 @@
   function openMobi7(buffer, fileName) {
     const bytes = new Uint8Array(buffer);
 
-    if (bytes.length < 100) throw new Error('檔案太小，不是有效的 MOBI。');
+    if (bytes.length < 100) throw new Error(window.YomuI18n ? window.YomuI18n.t('err.mobi.toosmall') : 'File is too small to be a MOBI.');
     const typeCreator = String.fromCharCode(bytes[0x3C], bytes[0x3D], bytes[0x3E], bytes[0x3F]);
     if (typeCreator !== 'BOOK') {
-      throw new Error('不是 MOBI 檔案（PalmDB type 不是 BOOK）。');
+      throw new Error(window.YomuI18n ? window.YomuI18n.t('err.mobi.notmobi') : 'Not a MOBI file (PalmDB type is not BOOK).');
     }
     const numRecords = u16(bytes, 0x4C);
-    if (!numRecords || numRecords > 0xFFFF) throw new Error('MOBI 檔案的表頭損壞。');
+    if (!numRecords || numRecords > 0xFFFF) throw new Error(window.YomuI18n ? window.YomuI18n.t('err.mobi.badheader') : 'The MOBI header is corrupt.');
 
     // Record offsets, guarded: a truncated download usually shows up here.
     const offs = [];
     for (let i = 0; i < numRecords + 1; i++) {
       const o = 78 + i * 8;
-      if (o + 4 > bytes.length) throw new Error('MOBI 檔案不完整（記錄表被截斷）。');
+      if (o + 4 > bytes.length) throw new Error(window.YomuI18n ? window.YomuI18n.t('err.mobi.truncated') : 'Incomplete MOBI (record table truncated).');
       offs.push(u32(bytes, o));
     }
     const rec = (i) => {
@@ -141,9 +141,9 @@
     const textRecords = u16(r0, 8);
     const encryption = u16(r0, 12);
 
-    if (encryption) throw new Error('這個 MOBI 有 DRM 保護，無法開啟。');
+    if (encryption) throw new Error(window.YomuI18n ? window.YomuI18n.t('err.mobi.drm') : 'This MOBI is DRM-protected and cannot be opened.');
     if (compression === HUFF) {
-      throw new Error('這個 MOBI 使用 HUFF/CDIC 壓縮，暫不支援。請用 Calibre 轉成 EPUB 或 AZW3。');
+      throw new Error(window.YomuI18n ? window.YomuI18n.t('err.mobi.huff') : 'This MOBI uses HUFF/CDIC compression, which is not supported. Convert it to EPUB or AZW3 with Calibre.');
     }
 
     const mobiMagic = String.fromCharCode(r0[16], r0[17], r0[18], r0[19]);
@@ -252,7 +252,7 @@
         html: clean,
       });
     });
-    if (!chapters.length) throw new Error('這個 MOBI 沒有可讀取的文字。');
+    if (!chapters.length) throw new Error(window.YomuI18n ? window.YomuI18n.t('err.mobi.notext') : 'This MOBI has no readable text.');
 
     // A single monster chapter means the book has no pagebreaks; split on
     // headings so the prev/next controls are still meaningful.
@@ -335,7 +335,7 @@
 
     // Label chapters from the TOC where possible, else number them.
     for (const t of toc) if (t.chapter < chapters.length && !chapters[t.chapter].title) chapters[t.chapter].title = t.label;
-    for (const c of chapters) if (!c.title) c.title = `第 ${c.index + 1} 節`;
+    for (const c of chapters) if (!c.title) { c.title = (window.YomuI18n ? window.YomuI18n.t('reader.section', { n: c.index + 1 }) : 'Section ' + (c.index + 1)); c.titleKind = 'section'; }
 
     const cache = new Map();
 
@@ -371,7 +371,8 @@
         const out = {
           html: `<div class="mobi-body">${ch.html}</div>`,
           css: '',
-          title: ch.title || `第 ${index + 1} 節`,
+          title: ch.title || (window.YomuI18n ? window.YomuI18n.t('reader.section', { n: index + 1 }) : 'Section ' + (index + 1)),
+          titleKind: ch.titleKind,
           path: ch.path,
         };
         cache.set(index, out);

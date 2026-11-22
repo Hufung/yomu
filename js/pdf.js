@@ -19,11 +19,11 @@
       const s = document.createElement('script');
       s.src = 'js/vendor/pdfjs/pdf.min.js';
       s.onload = () => {
-        if (!window.pdfjsLib) { reject(new Error('pdf.js 初始化失敗')); return; }
+        if (!window.pdfjsLib) { reject(new Error(window.YomuI18n ? window.YomuI18n.t('err.pdf.init') : 'pdf.js failed to initialise')); return; }
         window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'js/vendor/pdfjs/pdf.worker.min.js';
         resolve(window.pdfjsLib);
       };
-      s.onerror = () => reject(new Error('無法載入 pdf.js'));
+      s.onerror = () => reject(new Error(window.YomuI18n ? window.YomuI18n.t('err.pdf.load') : 'Could not load pdf.js'));
       document.head.appendChild(s);
     });
     return libPromise;
@@ -42,8 +42,8 @@
     try {
       doc = await task.promise;
     } catch (e) {
-      if (e && e.name === 'PasswordException') throw new Error('這個 PDF 有密碼保護，無法開啟。');
-      throw new Error('無法讀取這個 PDF（' + (e && e.message ? e.message : e) + '）。');
+      if (e && e.name === 'PasswordException') throw new Error(window.YomuI18n ? window.YomuI18n.t('err.pdf.password') : 'This PDF is password-protected and cannot be opened.');
+      throw new Error(window.YomuI18n ? window.YomuI18n.t('err.pdf.read', { msg: e && e.message ? e.message : e }) : 'Could not read this PDF (' + (e && e.message ? e.message : e) + ').');
     }
 
     let info = {};
@@ -51,7 +51,7 @@
 
     const chapters = [];
     for (let i = 1; i <= doc.numPages; i++) {
-      chapters.push({ index: i - 1, path: `pdf:${i}`, href: String(i), title: `第 ${i} 頁`, page: i });
+      chapters.push({ index: i - 1, path: `pdf:${i}`, href: String(i), title: (window.YomuI18n ? window.YomuI18n.t('reader.page', { n: i }) : 'Page ' + i), titleKind: 'page', page: i });
     }
 
     let tocCache = null;
@@ -74,7 +74,8 @@
         return {
           html: '',
           css: '',
-          title: `第 ${pageNo} 頁`,
+          title: (window.YomuI18n ? window.YomuI18n.t('reader.page', { n: pageNo }) : 'Page ' + pageNo),
+          titleKind: 'page',
           path: `pdf:${pageNo}`,
           host: api,
           page: pageNo,
@@ -121,7 +122,7 @@
           });
           await (tl.promise || tl);
         }
-        return `第 ${pageNo} 頁`;
+        return (window.YomuI18n ? window.YomuI18n.t('reader.page', { n: pageNo }) : 'Page ' + pageNo);
       },
 
       /* Document outline → TOC entries with page indices. */

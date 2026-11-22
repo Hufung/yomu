@@ -66,7 +66,7 @@
           html: processed.html,
         });
       }
-      if (!chapters.length) throw new Error('這個 AZW3 沒有可讀取的內容。');
+      if (!chapters.length) throw new Error(window.YomuI18n ? window.YomuI18n.t('err.azw3.notext') : 'This AZW3 has no readable content.');
 
       // Attach TOC labels.
       const toc = [];
@@ -83,7 +83,7 @@
 
       const meta = book.getMetadata() || {};
       const clean = (s) => String(s || '').replace(/\u0000/g, '').trim();
-      for (const c of chapters) if (!c.title) c.title = `第 ${c.index + 1} 節`;
+      for (const c of chapters) if (!c.title) { c.title = (window.YomuI18n ? window.YomuI18n.t('reader.section', { n: c.index + 1 }) : 'Section ' + (c.index + 1)); c.titleKind = 'section'; }
       const cache = new Map();
       return {
         format: 'azw3',
@@ -121,7 +121,7 @@
         // letting the browser navigate somewhere meaningless.
         doc.querySelectorAll('a[href^="kindle:"], a[href^="pos:"]').forEach((a) => a.removeAttribute('href'));
         const html = doc.body ? doc.body.innerHTML : '';
-        const out = { html: `<div class="mobi-body">${html}</div>`, css: '', title: ch.title, path: ch.path };
+        const out = { html: `<div class="mobi-body">${html}</div>`, css: '', title: ch.title, titleKind: ch.titleKind, path: ch.path };
         cache.set(index, out);
         return out;
       },

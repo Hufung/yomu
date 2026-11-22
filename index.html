@@ -33,21 +33,27 @@
       <span class="brand-sub">讀</span>
     </div>
     <div class="lib-actions">
-      <input id="search" type="search" placeholder="搜尋書名或作者" autocomplete="off" aria-label="搜尋書名或作者">
+      <input id="search" type="search" autocomplete="off" data-i18n-attr="placeholder:lib.search aria-label:lib.search">
       <button id="btn-import" class="btn btn-primary" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M4 17v2.5A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5V17"/></svg>
-        匯入
+        <span data-i18n="lib.import">匯入</span>
       </button>
       <input id="file-input" type="file" accept=".epub,.mobi,.azw3,.azw,.prc,.pdf,.txt,.md,.markdown,application/epub+zip,application/pdf,text/plain" multiple hidden>
-      <button id="btn-menu" class="btn btn-icon" type="button" aria-label="更多選項" aria-expanded="false">
+      <button id="btn-theme-lib" class="btn btn-icon" type="button" data-i18n-attr="aria-label:reader.theme title:reader.theme">
+        <svg viewBox="0 0 24 24" aria-hidden="true" class="ico-moon"><path d="M20 14.5A8.2 8.2 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true" class="ico-sun"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6"/></svg>
+      </button>
+      <button id="btn-menu" class="btn btn-icon" type="button" data-i18n-attr="aria-label:lib.more" aria-expanded="false">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>
       </button>
       <div id="menu" class="menu" hidden>
-        <button type="button" data-menu="backup">匯出備份 (JSON)</button>
-        <button type="button" data-menu="restore">還原備份</button>
-        <button type="button" data-menu="allnotes">全部筆記</button>
-        <button type="button" data-menu="storage">儲存空間</button>
-        <a href="https://github.com/Hufung/yomu" target="_blank" rel="noopener">GitHub</a>
+        <button type="button" data-menu="backup" data-i18n="lib.backup">匯出備份 (JSON)</button>
+        <button type="button" data-menu="restore" data-i18n="lib.restore">還原備份</button>
+        <button type="button" data-menu="allnotes" data-i18n="lib.allnotes">全部筆記</button>
+        <button type="button" data-menu="storage" data-i18n="lib.storage">儲存空間</button>
+        <button type="button" data-menu="lang" data-i18n="lib.language">語言 / Language</button>
+        <button type="button" data-menu="theme" data-i18n="lib.theme">切換深色模式</button>
+        <a href="https://github.com/Hufung/yomu" target="_blank" rel="noopener" data-i18n="lib.github">GitHub</a>
       </div>
     </div>
   </header>
@@ -55,26 +61,26 @@
   <section id="continue-card" class="continue" hidden>
     <div class="continue-cover" id="continue-cover"></div>
     <div class="continue-body">
-      <span class="eyebrow">繼續閱讀</span>
+      <span class="eyebrow" data-i18n="continue.eyebrow">繼續閱讀</span>
       <strong id="continue-title"></strong>
       <span id="continue-meta" class="muted"></span>
-      <button id="btn-continue" class="btn btn-primary btn-sm" type="button">開啟</button>
+      <button id="btn-continue" class="btn btn-primary btn-sm" type="button" data-i18n="continue.open">開啟</button>
     </div>
   </section>
 
-  <div id="drop-hint" class="drop-hint" hidden>放開以匯入 EPUB</div>
+  <div id="drop-hint" class="drop-hint" hidden data-i18n="drop.hint">放開以匯入電子書</div>
 
   <section id="shelf" class="shelf" aria-live="polite"></section>
 
   <div id="empty" class="empty" hidden>
     <svg viewBox="0 0 24 24" aria-hidden="true" class="empty-icon"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5v-13Z" opacity=".45"/><path d="M20 5.5c0-.8-.7-1.5-1.5-1.5H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5v-13Z"/></svg>
-    <h2>書架還是空的</h2>
-    <p>把 <code>.epub</code>、<code>.mobi</code>、<code>.azw3</code>、<code>.pdf</code> 或 <code>.txt</code> 拖進來，或按「匯入」。<br>檔案只會留在這部裝置，不會上傳到任何伺服器。</p>
-    <button class="btn btn-primary" type="button" data-action="import">選一個檔案</button>
+    <h2 data-i18n="empty.title">書架還是空的</h2>
+    <p data-i18n-html="empty.body">把 <code>.epub</code>、<code>.mobi</code>、<code>.azw3</code>、<code>.pdf</code> 或 <code>.txt</code> 拖進來，或按「匯入」。<br>檔案只會留在這部裝置，不會上傳到任何伺服器。</p>
+    <button class="btn btn-primary" type="button" data-action="import" data-i18n="empty.cta">選一個檔案</button>
   </div>
 
   <footer class="lib-foot">
-    <span class="muted">本機優先 · 無帳號 · 無上傳</span>
+    <span class="muted" data-i18n="app.tagline">本機優先 · 無帳號 · 無上傳</span>
     <span class="muted" id="storage-note"></span>
   </footer>
 </main>
@@ -82,26 +88,30 @@
 <!-- ───────────────────────── Reader ───────────────────────── -->
 <div id="view-reader" class="view reader" hidden>
   <header class="reader-bar">
-    <button id="btn-back" class="btn btn-icon" type="button" aria-label="回到書架">
+    <button id="btn-back" class="btn btn-icon" type="button" data-i18n-attr="aria-label:reader.back" aria-label="回到書架">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
     </button>
     <div class="reader-title">
       <strong id="rd-title">—</strong>
       <span id="rd-chapter" class="muted"></span>
     </div>
-    <button id="btn-toc" class="btn btn-icon" type="button" aria-label="目錄" aria-expanded="false">
+    <button id="btn-theme" class="btn btn-icon" type="button" aria-pressed="false" data-i18n-attr="aria-label:reader.theme title:reader.theme">
+      <svg viewBox="0 0 24 24" aria-hidden="true" class="ico-moon"><path d="M20 14.5A8.2 8.2 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg>
+      <svg viewBox="0 0 24 24" aria-hidden="true" class="ico-sun"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6"/></svg>
+    </button>
+    <button id="btn-toc" class="btn btn-icon" type="button" data-i18n-attr="aria-label:reader.toc" aria-expanded="false">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
     </button>
-    <button id="btn-notes" class="btn btn-icon" type="button" aria-label="劃線與筆記" aria-expanded="false">
+    <button id="btn-notes" class="btn btn-icon" type="button" data-i18n-attr="aria-label:reader.notes" aria-expanded="false">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l4-1 9-9-3-3-9 9-1 4Z"/><path d="M14 6l3 3"/></svg>
     </button>
-    <button id="btn-zen" class="btn btn-icon" type="button" aria-label="沉浸模式" aria-pressed="false" title="沉浸模式（隱藏工具列）">
+    <button id="btn-zen" class="btn btn-icon" type="button" aria-pressed="false" data-i18n-attr="aria-label:reader.zen title:reader.zen">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V5h4M20 9V5h-4M4 15v4h4M20 15v4h-4"/></svg>
     </button>
-    <button id="btn-full" class="btn btn-icon" type="button" aria-label="全螢幕" aria-pressed="false" title="全螢幕">
+    <button id="btn-full" class="btn btn-icon" type="button" aria-pressed="false" data-i18n-attr="aria-label:reader.full title:reader.full">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
     </button>
-    <button id="btn-aa" class="btn btn-icon" type="button" aria-label="閱讀設定" aria-expanded="false">Aa</button>
+    <button id="btn-aa" class="btn btn-icon" type="button" data-i18n-attr="aria-label:reader.settings" aria-expanded="false">Aa</button>
   </header>
 
   <div id="progress-track" class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100">
@@ -111,77 +121,85 @@
   <div id="scroll-area" class="scroll-area">
     <article id="chapter" class="chapter" tabindex="-1"></article>
     <nav class="chapter-nav">
-      <button id="btn-prev" class="btn" type="button">← 上一章</button>
+      <button id="btn-prev" class="btn" type="button" data-i18n="reader.prev">← 上一章</button>
       <span id="chapter-pos" class="muted"></span>
-      <button id="btn-next" class="btn" type="button">下一章 →</button>
+      <button id="btn-next" class="btn" type="button" data-i18n="reader.next">下一章 →</button>
     </nav>
   </div>
 
   <!-- floating selection toolbar -->
-  <div id="sel-bar" class="sel-bar" hidden role="toolbar" aria-label="劃線工具">
-    <button type="button" class="swatch" data-color="yellow" aria-label="黃色"></button>
-    <button type="button" class="swatch" data-color="green" aria-label="綠色"></button>
-    <button type="button" class="swatch" data-color="blue" aria-label="藍色"></button>
-    <button type="button" class="swatch" data-color="pink" aria-label="粉紅"></button>
+  <div id="sel-bar" class="sel-bar" hidden role="toolbar" data-i18n-attr="aria-label:sel.note">
+    <button type="button" class="swatch" data-color="yellow" data-i18n-attr="aria-label:sel.yellow"></button>
+    <button type="button" class="swatch" data-color="green" data-i18n-attr="aria-label:sel.green"></button>
+    <button type="button" class="swatch" data-color="blue" data-i18n-attr="aria-label:sel.blue"></button>
+    <button type="button" class="swatch" data-color="pink" data-i18n-attr="aria-label:sel.pink"></button>
     <span class="sel-sep"></span>
-    <button type="button" id="sel-note" class="sel-note">加筆記</button>
-    <button type="button" id="sel-copy" class="sel-copy" aria-label="複製">⧉</button>
+    <button type="button" id="sel-note" class="sel-note" data-i18n="sel.note">加筆記</button>
+    <button type="button" id="sel-copy" class="sel-copy" data-i18n-attr="aria-label:sel.copy">⧉</button>
   </div>
 
   <!-- drawers -->
   <aside id="drawer-toc" class="drawer" hidden>
-    <div class="drawer-head"><strong>目錄</strong><button class="btn btn-icon" data-close="toc" aria-label="關閉">✕</button></div>
+    <div class="drawer-head"><strong data-i18n="toc.title">目錄</strong><button class="btn btn-icon" data-close="toc" data-i18n-attr="aria-label:close">✕</button></div>
     <ol id="toc-list" class="toc-list"></ol>
   </aside>
 
   <aside id="drawer-notes" class="drawer" hidden>
     <div class="drawer-head">
-      <strong>劃線與筆記</strong>
-      <button class="btn btn-icon" data-close="notes" aria-label="關閉">✕</button>
+      <strong data-i18n="notes.title">劃線與筆記</strong>
+      <button class="btn btn-icon" data-close="notes" data-i18n-attr="aria-label:close">✕</button>
     </div>
     <div id="notes-list" class="notes-list"></div>
   </aside>
 
   <aside id="drawer-aa" class="drawer" hidden>
-    <div class="drawer-head"><strong>閱讀設定</strong><button class="btn btn-icon" data-close="aa" aria-label="關閉">✕</button></div>
+    <div class="drawer-head"><strong data-i18n="reader.settings">閱讀設定</strong><button class="btn btn-icon" data-close="aa" data-i18n-attr="aria-label:close">✕</button></div>
     <div class="aa-body">
       <label class="aa-row">
-        <span>字級</span>
+        <span data-i18n="aa.size">字級</span>
         <input id="opt-size" type="range" min="80" max="160" step="5" value="100">
         <output id="out-size">100%</output>
       </label>
       <label class="aa-row">
-        <span>行距</span>
+        <span data-i18n="aa.leading">行距</span>
         <input id="opt-leading" type="range" min="130" max="220" step="10" value="170">
         <output id="out-leading">1.7</output>
       </label>
       <label class="aa-row">
-        <span>欄寬</span>
+        <span data-i18n="aa.width">欄寬</span>
         <input id="opt-width" type="range" min="480" max="900" step="20" value="700">
         <output id="out-width">700</output>
       </label>
       <div class="aa-row">
-        <span>主題</span>
+        <span data-i18n="aa.theme">主題</span>
         <div class="seg" role="group" aria-label="主題">
-          <button type="button" data-theme="light" class="on">亮</button>
-          <button type="button" data-theme="sepia">紙</button>
-          <button type="button" data-theme="dark">暗</button>
-          <button type="button" data-theme="auto" title="跟隨系統">自動</button>
+          <button type="button" data-theme="light" class="on" data-i18n="aa.theme.light">亮</button>
+          <button type="button" data-theme="sepia" data-i18n="aa.theme.sepia">紙</button>
+          <button type="button" data-theme="dark" data-i18n="aa.theme.dark">暗</button>
+          <button type="button" data-theme="auto" data-i18n="aa.theme.auto">自動</button>
         </div>
       </div>
       <div class="aa-row aa-togglerow">
-        <span>版面</span>
+        <span data-i18n="aa.layout">版面</span>
         <label class="aa-check">
           <input type="checkbox" id="opt-fullbleed">
-          <span>全寬閱讀（配合螢幕）</span>
+          <span data-i18n="aa.fullbleed">全寬閱讀（配合螢幕）</span>
         </label>
       </div>
       <label class="aa-row">
-        <span>字體</span>
+        <span data-i18n="aa.font">字體</span>
         <select id="opt-font">
-          <option value="serif">襯線（書本感）</option>
-          <option value="sans">無襯線</option>
-          <option value="publisher">跟隨書籍樣式</option>
+          <option value="serif" data-i18n="aa.font.serif">襯線（書本感）</option>
+          <option value="sans" data-i18n="aa.font.sans">無襯線</option>
+          <option value="publisher" data-i18n="aa.font.publisher">跟隨書籍樣式</option>
+        </select>
+      </label>
+      <label class="aa-row">
+        <span data-i18n="aa.language">語言</span>
+        <select id="opt-lang">
+          <option value="auto" data-i18n="aa.lang.auto">跟隨瀏覽器</option>
+          <option value="zh-Hant">繁體中文</option>
+          <option value="en">English</option>
         </select>
       </label>
     </div>
@@ -193,10 +211,10 @@
   <div id="hl-pop" class="hl-pop" hidden>
     <div class="hl-pop-head"><span id="hl-swatch" class="hl-dot"></span><span id="hl-when" class="muted"></span></div>
     <blockquote id="hl-quote"></blockquote>
-    <textarea id="hl-note" rows="3" placeholder="寫下你的想法…"></textarea>
+    <textarea id="hl-note" rows="3" data-i18n-attr="placeholder:hl.note.placeholder"></textarea>
     <div class="hl-pop-actions">
-      <button type="button" id="hl-delete" class="btn btn-sm btn-danger">刪除</button>
-      <button type="button" id="hl-save" class="btn btn-sm btn-primary">儲存</button>
+      <button type="button" id="hl-delete" class="btn btn-sm btn-danger" data-i18n="hl.delete">刪除</button>
+      <button type="button" id="hl-save" class="btn btn-sm btn-primary" data-i18n="hl.save">儲存</button>
     </div>
   </div>
 </div>
@@ -209,6 +227,7 @@
 <script src="js/epub.js"></script>
 <script src="js/txt.js"></script>
 <script src="js/highlight.js"></script>
+<script src="js/i18n.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

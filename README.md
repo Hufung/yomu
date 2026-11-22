@@ -15,7 +15,9 @@ A calm, local-first **EPUB reader that runs entirely in your browser**. Drop a b
 - **Highlights that actually stay put** — anchored by character offset plus the surrounding text, so a mark re-attaches even if the browser reflows the chapter. If a book's text genuinely changes, the record is kept rather than silently thrown away.
 - **Table of contents** — EPUB 3 nav, EPUB 2 NCX, MOBI `filepos` links, and the PDF outline.
 - **Reading position & progress** — remembered per book, shown on the shelf and in a "continue reading" strip.
-- **Reading settings** — font size, line height, column width, serif / sans / publisher font, light / paper / **dark** themes plus **auto** (follows the OS live), and a **full-width** layout that uses the whole screen (two columns on a desktop).
+- **One-tap dark mode** — a sun/moon button in both the library header and the reader bar. It always lands on an explicit theme, so it never *looks* broken just because your OS already agreed with it. The full picker also offers paper, and **auto** (follows the OS live).
+- **Bilingual — English and Traditional Chinese** — the app starts in your browser's language and switches instantly from the menu or the settings drawer, without reloading the book. Even generated labels ("Section 12" / "第 12 節") follow the locale.
+- **Reading settings** — font size, line height, column width, serif / sans / publisher font, themes, and a **full-width** layout that uses the whole screen (two columns on a desktop).
 - **Fullscreen & immersive reading** — a native Fullscreen API button, and a Zen mode that hides the chrome so only the text is left. Tap the page, press `Z`, or `Esc` to get the toolbars back. On browsers without the Fullscreen API (iOS Safari) the button falls back to Zen instead of doing nothing.
 - **Fits the device** — the reader sizes itself from `dvh`/`dvw` with safe-area insets, so a collapsing mobile URL bar or a notch never cuts text off; the column re-fits on rotation and resize, and PDF pages repaint at the new width.
 - **Installable PWA** — works offline after the first visit. The app shell is cached by a service worker; the books themselves never need the network at all.
@@ -28,6 +30,7 @@ A calm, local-first **EPUB reader that runs entirely in your browser**. Drop a b
 | --- | --- |
 | `←` / `→`, `PgUp` / `PgDn` | previous / next chapter (or PDF page) |
 | `Z` | toggle Zen mode |
+| `L` | switch language (English ⇄ 繁中) |
 | `D` | toggle dark / light |
 | `F` | open reading settings |
 | `F11` | toggle fullscreen |
@@ -46,6 +49,12 @@ A calm, local-first **EPUB reader that runs entirely in your browser**. Drop a b
 | Library (dark) | Phone, dark + Zen | Empty state |
 | --- | --- | --- |
 | ![Dark library](docs/screenshots/08-dark-library.png) | ![Phone](docs/screenshots/12-phone-zen-dark.png) | ![Empty](docs/screenshots/01-empty.png) |
+
+English UI:
+
+| Library | Dark reader | Settings |
+| --- | --- | --- |
+| ![EN library](docs/screenshots/13-library-en.png) | ![EN dark](docs/screenshots/14-reader-dark-en.png) | ![EN settings](docs/screenshots/15-settings-en.png) |
 
 ## Supported formats
 
@@ -108,7 +117,7 @@ Everything stays on the device. The only network requests the app ever makes are
 - **HUFF/CDIC-compressed MOBI is not supported** — that format needs a dictionary table this reader does not implement. Convert with Calibre to EPUB or AZW3.
 - **Browser storage can be evicted.** The app requests persistent storage, but a browser under pressure (or a "clear site data") can still discard books — export a backup if the notes matter.
 - **Very large books are held in memory while open.** A 95 MB EPUB or a 96 MB MOBI opens in a couple of seconds here, but a 500 MB one will hurt.
-- **The UI is in Traditional Chinese.** The reading surface follows the book's own language.
+- **Two UI languages only** (English, Traditional Chinese). Adding a third means adding one table in `js/i18n.js`.
 
 ## Built with
 
@@ -119,7 +128,7 @@ Vanilla JavaScript, no framework, no bundler.
 - [@lingo-reader/mobi-parser](js/vendor/mobi/LICENSE-lingo-mobi) (MIT) — KF8/AZW3 only; MOBI 7 has a hand-written reader in `js/mobi7.js`
 - [sax](js/vendor/mobi/LICENSE-sax), [events](js/vendor/mobi/LICENSE-events), [path-browserify](js/vendor/mobi/LICENSE-path-browserify) — dependencies of the KF8 parser
 
-Testing was done with real Chromium over the DevTools protocol: 111 end-to-end assertions across three suites (EPUB lifecycle, format coverage, viewport/theme/fullscreen), plus real 95 MB and 96 MB books.
+Testing was done with real Chromium over the DevTools protocol: **136 end-to-end assertions across four suites** (EPUB lifecycle, format coverage, viewport/theme/fullscreen, i18n + dark toggle), plus real 95 MB and 96 MB books. Run them all with `../yomu-test/runall.sh`.
 
 ## License
 
